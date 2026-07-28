@@ -2000,6 +2000,13 @@ async function ghShareUpload(files){
     if(sb) sb.style.display='';
     const fi=document.getElementById('fileShare');
     if(fi) fi.addEventListener('change', e=>{ ghShareUpload([...e.target.files]); e.target.value=''; });
+    // 远程数据模式下隐藏本地导入类按钮（仅本机预览、刷新即被云端覆盖，避免误用）
+    ['fileRecords','filePlan'].forEach(id=>{
+      const el=document.querySelector('label[for="'+id+'"]');
+      if(el) el.style.display='none';
+    });
+    const tpl=document.getElementById('btnPlanTpl');
+    if(tpl) tpl.style.display='none';
   }
   renderStudents(); renderAll();
 })();
