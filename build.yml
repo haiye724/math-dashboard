@@ -1,0 +1,25 @@
+name: 构建看板数据（拖文件触发）
+on:
+  push:
+    paths:
+      - "uploads/**"           # 往 uploads/ 传文件即自动构建
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install pandas openpyxl
+      - name: 解析 uploads 生成 data.json
+        run: python ingest_files.py
+      - name: 提交更新
+        run: |
+          git config user.name  "build-bot"
+          git config user.email "build-bot@users.noreply.github.com"
+          git add docs/data.json
+          git diff --cached --quiet || git commit -m "build data $(date -u +%F_%T)"
+          git push
