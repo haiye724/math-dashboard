@@ -29,13 +29,13 @@ def parse_one(f):
     cur = cur.drop_duplicates(subset=["学生名称","题模名称"], keep="last")
     if "学科" in cur.columns:
         cur = cur[cur["学科"].astype(str).str.contains("数学")]
-    study_cols = [c for c in ["前测日期","新知学日期1","新知学日期2","巩固学日期1","巩固学日期2","巩固学日期3"] if c in cur.columns]
+    study_cols = [c for c in ["新知学日期1","新知学日期2","巩固学日期1","巩固学日期2","巩固学日期3"] if c in cur.columns]
     recs = []
     for _, r in cur.iterrows():
         stu, mod = str(r["学生名称"]).strip(), str(r["题模名称"]).strip()
         if not stu or not mod or stu == "nan":
             continue
-        study = sorted({d for d in (nd(r.get(c)) for c in study_cols) if d})
+        study = {d for d in (nd(r.get(c)) for c in study_cols) if d}
         ans_all, ans_ok = [], []
         for i in range(1, 8):
             d = nd(r.get(f"答题时间{i}"))
@@ -44,11 +44,18 @@ def parse_one(f):
             ce = str(r.get(f"消错题结果{i}", "")).strip()
             if not ce or ce in ("/", "nan"):
                 ans_ok.append(d)                      # 非消错作答（二遍学判定）
+        # 前测日期：答对的计入（判会时点）；答错的仅当当天另有学习活动或再无其他日期时计入
+        base = study | set(ans_ok)
+        pre_d = nd(r.get("前测日期"))
+        pre_ok = str(r.get("前测是否答对", "")).strip() == "答对"
+        if pre_d and (pre_ok or pre_d in base or not (base or ans_all)):
+            base.add(pre_d)
+        study = sorted(base)
         dt = max(ans_all) if ans_all else (max(study) if study else None)
         recs.append({"n": stu, "m": mod,
                      "p": 1 if str(r["是否过关"]).strip() == "过关" else 0,
                      "dt": dt, "pre": str(r.get("前测是否答对", "/")).strip() or "/",
-                     "acts": sorted(set(study) | set(ans_ok))})
+                     "acts": study})
     full = pd.read_excel(f, sheet_name="全量统计(不限时间)")
     if "学科" in full.columns:
         full = full[full["学科"].astype(str).str.contains("数学")]
