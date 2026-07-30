@@ -13,20 +13,15 @@ import pandas as pd
 
 UP, OUT = "uploads", os.path.join("docs", "data.json")
 
-# 本期起点覆盖：新批学生统一按 2026-07-25 开课（此前活动一律归开课前已学）
-TERM_START = {
-    "杨心懿": "2026-07-25", "松思语": "2026-07-25", "宁骁腾": "2026-07-25",
-    "宁骁畅": "2026-07-25", "刘浩霖": "2026-07-25", "彭羽彤": "2026-07-25",
-}
-
 def nd(v):
     m = re.match(r"(\d{4})[-/年](\d{1,2})[-/月](\d{1,2})", str(v))
     return f"{m.group(1)}-{int(m.group(2)):02d}-{int(m.group(3)):02d}" if m else None
 
 def parse_one(f):
-    """解析一个答题记录xlsx → (recs, fl, 文件内容最大日期, 窗口起始日期)"""
-    cur = pd.read_excel(f, sheet_name="当次统计(按答题时间)")
-    cur = cur.drop_duplicates(subset=["学生名称","题模名称"], keep="last")
+    """解析一个答题记录xlsx → (全量recs, fl, 文件内容最大日期, 窗口起始日期)"""
+    # 课次起点由网页端按学生设置，因此这里直接读取“全量统计”，不再用导出窗口裁剪历史学习。
+    full = pd.read_excel(f, sheet_name="全量统计(不限时间)")
+    cur = full.drop_duplicates(subset=["学生名称","题模名称"], keep="last")
     if "学科" in cur.columns:
         cur = cur[cur["学科"].astype(str).str.contains("数学")]
     study_cols = [c for c in ["新知学日期1","新知学日期2","巩固学日期1","巩固学日期2","巩固学日期3"] if c in cur.columns]
@@ -56,7 +51,6 @@ def parse_one(f):
                      "p": 1 if str(r["是否过关"]).strip() == "过关" else 0,
                      "dt": dt, "pre": str(r.get("前测是否答对", "/")).strip() or "/",
                      "acts": study})
-    full = pd.read_excel(f, sheet_name="全量统计(不限时间)")
     if "学科" in full.columns:
         full = full[full["学科"].astype(str).str.contains("数学")]
     fl = {}
@@ -67,10 +61,9 @@ def parse_one(f):
     win = all_days[0] if all_days else "0000"
     return recs, fl, mx, win
 
-def build_records(plan_start=None):
+def build_records():
     xs = glob.glob(os.path.join(UP, "*学生答题记录*.xlsx"))
     assert xs, "uploads/ 下没有 学生答题记录*.xlsx"
-    plan_start = plan_start or {}
     parsed = []
     for f in xs:
         try:
@@ -96,18 +89,9 @@ def build_records(plan_start=None):
             by_key[key] = r
         for s, mods in fl.items():
             fl_by_stu[s] = sorted(set(fl_by_stu.get(s, [])) | set(mods))
-    # 开课日之前的活动一律视为开课前已学：从当次剔除（模仍在全量→计为 prior）
-    out = []
-    for r in by_key.values():
-        ps = max(plan_start.get(r["n"], ""), TERM_START.get(r["n"], "")) or None
-        if ps:
-            r["acts"] = [d for d in r["acts"] if d >= ps]
-            if r["dt"] and r["dt"] < ps:
-                r["dt"] = max(r["acts"]) if r["acts"] else None
-            if not r["acts"] and not r["dt"]:
-                continue
-        out.append(r)
-    return out, fl_by_stu
+    # 保留合并后的全部活动。每位学生的“第1次课日期”由网页端手动设置，
+    # 该日期只决定课次编号起点；更早活动仍作为历史已学数据参与进度判断。
+    return list(by_key.values()), fl_by_stu
 
 def build_plans():
     plans, plans_fall, stamp = {}, {}, {}
@@ -148,8 +132,7 @@ def build_plans():
 
 def main():
     plans, plans_fall = build_plans()
-    plan_start = {s: (p["lessons"][0]["date"] or "0000") for s, p in plans.items() if p.get("lessons")}
-    recs, fl = build_records(plan_start)
+    recs, fl = build_records()
     dts = sorted(r["dt"] for r in recs if r["dt"])
     out = {"records": recs, "fullLearned": fl,
            "plans": plans, "plansFall": plans_fall,
