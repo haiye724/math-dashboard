@@ -1515,6 +1515,7 @@ function makeYMapper(bar, ch, labelEls){
 }
 /* 一章的连续进度条：浅色计划打底、深色实际覆盖；实际每课次一个有边界的格（保证最小可见高度） */
 function paintBar(bar, lcol, ch, labelEls, pCuts, aCuts, ppal, apal, t, secSkipped, cntTextRef, failLC, failMax, paceHtmlByNo, planTags, shortD, lcol2, cuts2, secondStartIdx){
+  const MIN=22;
   const priorUpto = (aCuts && aCuts.priorUpto!=null)? aCuts.priorUpto : -1;
   lcol.innerHTML='';
   if(lcol2) lcol2.innerHTML='';
@@ -1546,7 +1547,6 @@ function paintBar(bar, lcol, ch, labelEls, pCuts, aCuts, ppal, apal, t, secSkipp
 
   // ---- 实际（深色覆盖，实线分格；每课次格最小高度，仅内部分隔线位置微调） ----
   {
-    const MIN=22;
     // 开课前已学：直接填色（无课次标签/日期/快慢）
     if(priorUpto>=ch.start){
       const pf=ch.start, pt=Math.min(priorUpto, chEnd);
