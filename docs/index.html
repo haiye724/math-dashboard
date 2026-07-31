@@ -1385,20 +1385,6 @@ function renderProgress(stu, grade, inGrade){
       for(const [n,dd] of Object.entries(P.dur)) if(planCounted(P,n,t)) tot+=dd;
       avgLessonMin = P.lessons.length? tot/P.lessons.length : 0;
     }
-    const planEndCum=[]; {
-      let far=-1;
-      P.lessons.forEach(L=>{
-        L.names.forEach(n=>{
-          if(!planCounted(P,n,t)) return;
-          const i=t.byName.get(n);
-          if(i!==undefined && t.inReal(i) && i>far) far=i;
-        });
-        planEndCum.push(far);
-      });
-    }
-    // 每个计划知识点的排期课次
-    const n2lesson={};
-    P.lessons.forEach(L=>{ L.names.forEach(n=>{ if(!(n in n2lesson)) n2lesson[n]=L.no; }); });
     const firstPlanNames=new Set((P.lessons[0]?.names||[]).filter(n=>planCounted(P,n,t)));
     const alignAt=aCuts.findIndex(c=>{
       const names=(c.idxs||[]).map(i=>t.rows[i]&&t.rows[i].m).filter(Boolean);
@@ -1407,32 +1393,29 @@ function renderProgress(stu, grade, inGrade){
       // 混有大量计划外内容的课仍视为计划外；至少八成内容进入计划第1课才开始匹配。
       return matched/names.length>=0.8;
     });
+    // 对齐后按计划课次累计对比，不再用知识树上的位置区间估算时长。
+    // 这样计划中偶尔穿插的远位置知识点，不会把中间整段课程误算为落后。
+    const expectedNames=new Set();
+    const actualPlanNames=new Set();
     aCuts.forEach((c,ci)=>{
       if(alignAt<0 || ci<alignAt){ paceHtmlByNo[c.no]=''; return; }
       const pk=ci-alignAt+1;
-      if(pk>planEndCum.length){ paceHtmlByNo[c.no]=''; return; }
-      const pPos=planEndCum[pk-1];
-      if(pPos==null || pPos<0){ paceHtmlByNo[c.no]=''; return; }
-      const aPos=c.upto;
-      if(aPos===pPos){ paceHtmlByNo[c.no]=''; lastPaceInfo={slow:false, mins:0}; return; }   // 进度正常不显示
-      const slow=aPos<pPos;
-      const lo=Math.min(aPos,pPos)+1, hi=Math.max(aPos,pPos);
-      // 排期上限 J：第一个目标位置越过区间上限的课次（这段进程连续覆盖到的课次）；
-      // 排期在 J 之后的属于间隔复习/回头内容，不计入快慢
-      let J=planEndCum.length;
-      for(let j=1;j<=planEndCum.length;j++){ if(planEndCum[j-1]>hi){ J=j; break; } }
-      let mins=0, cnt=0;
-      for(const [n,dd] of Object.entries(P.dur)){
-        if(!planCounted(P,n,t)) continue;
-        if((n2lesson[n]||1)>J) continue;
-        const i=t.byName.get(n);
-        if(i!==undefined && i>=lo && i<=hi){ mins+=dd; cnt++; }
-      }
-      mins=Math.round(mins);
+      if(pk>P.lessons.length){ paceHtmlByNo[c.no]=''; return; }
+      (P.lessons[pk-1]?.names||[]).forEach(n=>{ if(planCounted(P,n,t)) expectedNames.add(n); });
+      (c.idxs||[]).forEach(i=>{
+        const n=t.rows[i]&&t.rows[i].m;
+        if(n&&planCounted(P,n,t)) actualPlanNames.add(n);
+      });
+      const missing=[...expectedNames].filter(n=>!actualPlanNames.has(n));
+      const ahead=[...actualPlanNames].filter(n=>!expectedNames.has(n));
+      const missingMin=missing.reduce((sum,n)=>sum+(Number(P.dur[n])||0),0);
+      const aheadMin=ahead.reduce((sum,n)=>sum+(Number(P.dur[n])||0),0);
+      const delta=Math.round(missingMin-aheadMin);
+      const slow=delta>0, mins=Math.abs(delta);
       lastPaceInfo={slow, mins};
       if(mins<3){ paceHtmlByNo[c.no]=''; return; }
       const hrs=(mins/60).toFixed(1);
-      paceHtmlByNo[c.no]=`<span class="pace-badge ${slow?'slow':'fast'}" title="实际第${c.no}课按内容对应计划第${pk}课；进度相差 ${cnt} 个知识点（${mins}min）">${slow?'慢':'快'} ${hrs}h</span>`;
+      paceHtmlByNo[c.no]=`<span class="pace-badge ${slow?'slow':'fast'}" title="实际第${c.no}课按内容对应计划第${pk}课；计划内未完成 ${missing.length} 个、提前完成 ${ahead.length} 个，折算相差 ${mins}min">${slow?'慢':'快'} ${hrs}h</span>`;
     });
   }
   const planTags = pCuts.filter(c=>c.upto>actualIdx);   // 已完成的进度不再显示计划课次
@@ -1679,8 +1662,11 @@ function paintBar(bar, lcol, ch, labelEls, pCuts, aCuts, ppal, apal, t, secSkipp
       const from=Math.max(ch.start,Math.min(...ranges.map(r=>r.from)));
       const upto=Math.min(chEnd,Math.max(...ranges.map(r=>r.upto)));
       if(upto<=chapterFar) return null; // 回头复习但未推进本章，不新增课次分隔线
+      // 当天既复习旧内容又向后推进时，分隔线应画在“新推进”起点，
+      // 不能回到当天最早的复习知识点，否则后续课次的白线会全挤在前面。
+      const boundaryFrom=chapterFar>=ch.start ? Math.max(from,chapterFar+1) : from;
       chapterFar=upto;
-      return {no:c.no, from};
+      return {no:c.no, from:boundaryFrom};
     }).filter(Boolean);
     chapterLessons.slice(1).forEach(c=>{
       const y=yOf(c.from,false);
@@ -1948,21 +1934,19 @@ document.getElementById('fileRecords').addEventListener('change',async e=>{
     const wb=X.read(buf,{type:'array'});
     let sn=wb.SheetNames.find(n=>n.includes('全量')) || wb.SheetNames.find(n=>n.includes('当次')) || wb.SheetNames[0];
     const js=X.utils.sheet_to_json(wb.Sheets[sn],{defval:null,raw:false});
-    const fsn=wb.SheetNames.find(n=>n.includes('全量'));
-    if(fsn){
-      const fjs=X.utils.sheet_to_json(wb.Sheets[fsn],{defval:null,raw:false});
-      const fl={};
-      fjs.forEach(r=>{
-        if(r['学科']!=null && !String(r['学科']).includes('数学')) return;
-        const n=r['学生名称'], m=r['题模名称'];
-        if(!n||!m) return;
-        (fl[String(n).trim()]=fl[String(n).trim()]||new Set()).add(String(m).trim());
-      });
-      fullLearned={};
-      for(const [k,v] of Object.entries(fl)) fullLearned[k]=[...v];
-    }
     if(!js.length || !('学生名称' in js[0]) || !('题模名称' in js[0]) || !('是否过关' in js[0]))
       throw new Error(`工作表「${sn}」缺少必需列：学生名称 / 题模名称 / 是否过关`);
+    // 学习数据表一律按全量数据处理：同一张表同时用于课次、进度和历史已学回填。
+    // 因此即使工作表名不含“全量”，也不会残留上一次导入的历史数据。
+    const fl={};
+    js.forEach(r=>{
+      if(r['学科']!=null && !String(r['学科']).includes('数学')) return;
+      const n=r['学生名称'], m=r['题模名称'];
+      if(!n||!m) return;
+      (fl[String(n).trim()]=fl[String(n).trim()]||new Set()).add(String(m).trim());
+    });
+    fullLearned={};
+    for(const [k,v] of Object.entries(fl)) fullLearned[k]=[...v];
     const newRecs=applyRecordRows(js);
     records=newRecs;
     const ds=newRecs.map(r=>r.dt).filter(Boolean).sort();
