@@ -703,6 +703,21 @@ function currentDays(stu){
   const start=firstLessonDate(stu);
   return records.filter(r=>r.n===stu).flatMap(recordDays).filter(d=>d>=start);
 }
+/* 单张全量表按每个学生的第1次课日期拆成“本期已学”和“历史已学”。
+   acts=[] 表示只有消错题，两边都不计；仅对旧数据中没有记录明细的 fullLearned 保留兼容。 */
+function studySets(stu){
+  const start=firstLessonDate(stu);
+  const current=new Set(), prior=new Set(), recordNames=new Set();
+  records.forEach(r=>{
+    if(r.n!==stu) return;
+    recordNames.add(r.m);
+    const ds=recordDays(r);
+    if(ds.some(d=>d>=start)) current.add(r.m);
+    if(ds.some(d=>d<start)) prior.add(r.m);
+  });
+  (fullLearned[stu]||[]).forEach(n=>{ if(!recordNames.has(n)) prior.add(n); });
+  return {current, prior};
+}
 
 /* 知识树索引 */
 const TREE = {};   // grade -> {rows, byName, chapters:[{name, start, len, sections:[{name,start,len}]}]}
@@ -883,8 +898,7 @@ function summerRestOf(stu, grade){
   const P=plans[stu];
   if(!P) return 0;
   const t=TREE[grade];
-  const curSet=new Set(records.filter(r=>r.n===stu).map(r=>r.m));
-  const fullSet=new Set(fullLearned[stu]||[]);
+  const {current:curSet, prior:priorLearnedSet}=studySets(stu);
   const n2l={};
   P.lessons.forEach(L=>L.names.forEach(n=>{ if(!(n in n2l)) n2l[n]=L.no; }));
   const attended=new Set(currentDays(stu)).size;
@@ -892,7 +906,7 @@ function summerRestOf(stu, grade){
   let rest=0;
   for(const n of Object.keys(P.dur)){
     if(!planCounted(P,n,t)) continue;
-    if(!curSet.has(n) && (fullSet.has(n) || (isCe(P.types[n]) && (n2l[n]||1)<=dueK))) continue;  // 开课前已学/已到课的测学未出题
+    if(!curSet.has(n) && (priorLearnedSet.has(n) || (isCe(P.types[n]) && (n2l[n]||1)<=dueK))) continue;  // 开课前已学/已到课的测学未出题
     if(!curSet.has(n)) rest++;
   }
   return rest;
@@ -952,8 +966,7 @@ function renderPaceStat(stu, grade){
   }
   descEl.textContent='已学知识点数量 / 本期计划知识点总数';
   const P=plans[stu];
-  const curSet=new Set(records.filter(r=>r.n===stu).map(r=>r.m));
-  const fullSet=new Set(fullLearned[stu]||[]);
+  const {current:curSet, prior:priorLearnedSet}=studySets(stu);
   // 排期与已上课次（用于判断测学是否"已到课仍未出题"）
   const n2lP={};
   P.lessons.forEach(L=>L.names.forEach(n=>{ if(!(n in n2lP)) n2lP[n]=L.no; }));
@@ -961,7 +974,7 @@ function renderPaceStat(stu, grade){
   const dueK=Math.min(attendedP, P.lessons.length);
   // 剔除"本来就会、不占本期任务"的知识点：开课前已学（全量有当次无）
   // + 测学未出题且排期课次已到（自适应前测判定已会）；未来课次的测学保留为未学
-  const priorSet=new Set([...tgt.set].filter(n=> !curSet.has(n) && (fullSet.has(n) || (isCe(P.types[n]) && (n2lP[n]||1)<=dueK))));
+  const priorSet=new Set([...tgt.set].filter(n=> !curSet.has(n) && (priorLearnedSet.has(n) || (isCe(P.types[n]) && (n2lP[n]||1)<=dueK))));
   let den=0, rest=0;
   for(const n of tgt.set){
     if(priorSet.has(n)) continue;
@@ -1184,39 +1197,28 @@ function planCuts(stu, grade){
   });
   return cuts;
 }
-/* 二遍学检测：按章用“同一模间隔超过4天再次学习”确定二遍开始日；
-   二遍只影响触发它的章节，不能把同日或后续新章节的预习误判为提升。 */
+/* 二遍学检测：只有“同一模间隔超过4天后再次学习”才算二遍。
+   不按整章切换轮次，避免把二遍开始后首次学习的新知识点误标为二遍。 */
 const SECOND_GAP_DAYS = 4;
 function secondPassOf(stu, startDate=firstLessonDate(stu), grade=detectGrade(stu)){
   const t=TREE[grade];
-  const secondStartByChapter=new Map();
+  const byMod={}; const dates=new Set();
   records.forEach(r=>{
     if(r.n!==stu || !r.acts || r.acts.length<2) return;
     const idx=t&&t.byName.get(r.m);
-    const ch=idx===undefined?null:t.real.find(x=>idx>=x.start&&idx<x.start+x.len);
-    if(!ch) return;
+    if(idx===undefined || !t.inReal(idx)) return;
     // 要保留设置日期之前的一遍记录，才能识别“此前预习、从第1次课开始提升”。
-    const acts=r.acts.slice().sort();
-    if(acts.length<2) return;
+    const acts=[...new Set(r.acts)].sort();
+    let secondAt=-1;
     for(let i=1;i<acts.length;i++){
       const d1=new Date(acts[i-1]), d2=new Date(acts[i]);
       if(acts[i]>=startDate && (d2-d1)/86400000 > SECOND_GAP_DAYS){
-        const old=secondStartByChapter.get(ch);
-        if(old==null || acts[i]<old) secondStartByChapter.set(ch,acts[i]);
+        secondAt=i;
         break;
       }
     }
-  });
-  if(!secondStartByChapter.size) return {byMod:{}, dates:[]};
-  const byMod={}; const dates=new Set();
-  records.forEach(r=>{
-    if(r.n!==stu || !r.acts || !r.acts.length) return;
-    const idx=t&&t.byName.get(r.m);
-    const ch=idx===undefined?null:t.real.find(x=>idx>=x.start&&idx<x.start+x.len);
-    const secondStart=ch&&secondStartByChapter.get(ch);
-    if(!secondStart) return;
-    const sec=r.acts.filter(d=>d>=secondStart);
-    if(!sec.length) return;
+    if(secondAt<0) return;
+    const sec=acts.slice(secondAt).filter(d=>d>=startDate);
     byMod[r.m]=[...new Set(sec)].sort();
     byMod[r.m].forEach(d=>dates.add(d));
   });
@@ -1274,7 +1276,7 @@ function renderProgress(stu, grade, inGrade){
           const inCh=idxs.filter(i=>i>=ch.start&&i<=end);
           if(inCh.length) ranges.push({from:inCh[0], upto:inCh[inCh.length-1]});
         });
-        if(ranges.length) cuts2.push({date:d, from:ranges[0].from, upto:ranges[ranges.length-1].upto, ranges, no:k+1});
+        if(ranges.length) cuts2.push({date:d, from:ranges[0].from, upto:ranges[ranges.length-1].upto, ranges, idxs, no:k+1});
       });
     }
   }
@@ -1390,8 +1392,8 @@ function renderProgress(stu, grade, inGrade){
       const names=(c.idxs||[]).map(i=>t.rows[i]&&t.rows[i].m).filter(Boolean);
       if(!names.length) return false;
       const matched=names.filter(n=>firstPlanNames.has(n)).length;
-      // 混有大量计划外内容的课仍视为计划外；至少八成内容进入计划第1课才开始匹配。
-      return matched/names.length>=0.8;
+      // 计划第1课可能被拆到相邻两次实际课中；六成内容对上即可开始匹配。
+      return matched/names.length>=0.6;
     });
     // 对齐后按计划课次累计对比，不再用知识树上的位置区间估算时长。
     // 这样计划中偶尔穿插的远位置知识点，不会把中间整段课程误算为落后。
@@ -1715,39 +1717,47 @@ function paintBar(bar, lcol, ch, labelEls, pCuts, aCuts, ppal, apal, t, secSkipp
     }
   }
 
-  // ---- 二遍学层（绿色）：当天同章连续，跨章断开；仅跳过选学/不学时连接 ----
+  // ---- 二遍学层（绿色）：按章显示累计进度，绝不跨章 ----
   if(cuts2 && cuts2.length){
     const required2=new Set(aCuts.requiredIdx||[]);
+    const chapterRequired=[...required2].filter(i=>i>=ch.start&&i<=chEnd);
+    const seenSecond=new Set();
     let prevFar2=ch.start-1;
     cuts2.forEach(c=>{
-      const rr=(c.ranges||[]).find(r=>r.upto>=ch.start&&r.from<=chEnd);
-      if(!rr) return;
-      let from=Math.max(rr.from,ch.start), to=Math.min(rr.upto,chEnd);
-      if(prevFar2>=ch.start){
-        let blocks=false;
-        for(let i=prevFar2+1;i<from;i++){
-          if(required2.has(i)){ blocks=true; break; }
+      const idxs=(c.idxs||[]).filter(i=>i>=ch.start&&i<=chEnd);
+      if(!idxs.length) return;
+      idxs.forEach(i=>seenSecond.add(i));
+      const learnedTo=Math.max(...idxs);
+      const chapterDone=chapterRequired.length>0 && chapterRequired.every(i=>seenSecond.has(i));
+      // 二遍在本章内从章首累计到最远位置；必学/测学全完成后补满整章。
+      const target=chapterDone ? chEnd : Math.max(prevFar2,learnedTo);
+      let labelY=null;
+      if(target>prevFar2){
+        const from=prevFar2>=ch.start ? prevFar2+1 : ch.start;
+        const y1=yOf(from,false), y2=yOf(target,true);
+        if(y1!=null&&y2!=null){
+          const seg=document.createElement('div');
+          seg.className='act2-seg';
+          seg.style.top=y1+'px';
+          seg.style.height=Math.max(2,y2-y1)+'px';
+          seg.dataset.tip=`第${c.no}课（二遍）｜${c.date}`;
+          bar.appendChild(seg); hookTip(seg);
+          labelY=y2;
         }
-        if(from<=prevFar2+1 || !blocks) from=prevFar2+1;
+        prevFar2=target;
+      }else{
+        // 只回头复习时不重复切割绿色条，仅保留该次课标签。
+        const y1=yOf(learnedTo,false), y2=yOf(learnedTo,true);
+        if(y1!=null&&y2!=null) labelY=(y1+y2)/2;
       }
-      const advanced=to>=from;
-      const marker=advanced?from:Math.min(Math.max(to,ch.start),chEnd);
-      const y1=yOf(marker,false), y2=advanced?yOf(to,true):yOf(marker,true);
-      if(y1==null||y2==null) return;
-      const seg=document.createElement('div');
-      seg.className='act2-seg';
-      seg.style.top=y1+'px';
-      seg.style.height=Math.max(2,y2-y1)+'px';
-      seg.dataset.tip=`第${c.no}课（二遍）｜${c.date}`;
-      bar.appendChild(seg); hookTip(seg);
       if(lcol2){
+        if(labelY==null) return;
         const line=document.createElement('div');
         line.className='lesson-line';
-        line.style.top=y2+'px';
+        line.style.top=labelY+'px';
         line.innerHTML=`<span class="lesson-tag second-tag" title="${c.date}（二遍）">第${c.no}课 ${shortD(c.date)}</span>`;
         lcol2.appendChild(line);
       }
-      prevFar2=Math.max(prevFar2,to);
     });
   }
 
