@@ -2,7 +2,7 @@
 """
 uploads/ 文件夹 → docs/data.json 构建脚本（拖文件即更新方案）
 读取：
-  uploads/ 下最新的 学生答题记录*.xlsx（当次+全量两个sheet，自动过滤数学）
+  uploads/ 下全部的 学生答题记录*.xlsx（兼容单张“全量学习数据表”和旧版双sheet，自动过滤数学）
   uploads/ 下全部的 学生课次明细*.csv（暑期→plans，秋季→plansFall；同名学生取文件名日期最新的）
 输出：docs/data.json（records/fullLearned/plans/plansFall/exportStart/generatedAt）
 依赖：pip install pandas openpyxl
@@ -17,10 +17,26 @@ def nd(v):
     m = re.match(r"(\d{4})[-/年](\d{1,2})[-/月](\d{1,2})", str(v))
     return f"{m.group(1)}-{int(m.group(2)):02d}-{int(m.group(3)):02d}" if m else None
 
+def read_full_sheet(f):
+    """读取答题记录中的全量数据表；优先表名含“全量”，并用必需列校验。"""
+    required = {"学生名称", "题模名称", "是否过关"}
+    book = pd.ExcelFile(f)
+    preferred = [s for s in book.sheet_names if "全量" in s]
+    candidates = preferred + [s for s in book.sheet_names if s not in preferred]
+    seen = []
+    for sheet in candidates:
+        data = pd.read_excel(book, sheet_name=sheet)
+        data.columns = [str(c).lstrip("\ufeff").strip() for c in data.columns]
+        seen.append(f"{sheet}({len(data)}行)")
+        if required.issubset(data.columns):
+            return data, sheet
+    raise ValueError("没有找到学习数据表（需要列：学生名称 / 题模名称 / 是否过关）；已检查：" + "、".join(seen))
+
 def parse_one(f):
     """解析一个答题记录xlsx → (全量recs, fl, 文件内容最大日期, 窗口起始日期)"""
-    # 课次起点由网页端按学生设置，因此这里直接读取“全量统计”，不再用导出窗口裁剪历史学习。
-    full = pd.read_excel(f, sheet_name="全量统计(不限时间)")
+    # 课次起点由网页端按学生设置，因此这里直接读取全量学习数据，不再用导出窗口裁剪历史学习。
+    full, sheet = read_full_sheet(f)
+    print(f"读取 {os.path.basename(f)} / {sheet}")
     cur = full.drop_duplicates(subset=["学生名称","题模名称"], keep="last")
     if "学科" in cur.columns:
         cur = cur[cur["学科"].astype(str).str.contains("数学")]
