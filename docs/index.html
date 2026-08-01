@@ -1392,8 +1392,8 @@ function renderProgress(stu, grade, inGrade){
       const names=(c.idxs||[]).map(i=>t.rows[i]&&t.rows[i].m).filter(Boolean);
       if(!names.length) return false;
       const matched=names.filter(n=>firstPlanNames.has(n)).length;
-      // 计划第1课可能被拆到相邻两次实际课中；六成内容对上即可开始匹配。
-      return matched/names.length>=0.6;
+      // 计划第1课可能被拆到相邻两次实际课中，或同日提前进入下一课；四成内容对上即可开始匹配。
+      return matched/names.length>=0.4;
     });
     // 对齐后按计划课次累计对比，不再用知识树上的位置区间估算时长。
     // 这样计划中偶尔穿插的远位置知识点，不会把中间整段课程误算为落后。
