@@ -1397,6 +1397,10 @@ function renderProgress(stu, grade, inGrade){
     });
     // 对齐后按计划课次累计对比，不再用知识树上的位置区间估算时长。
     // 这样计划中偶尔穿插的远位置知识点，不会把中间整段课程误算为落后。
+    // 快慢口径与进度统计一致：开课前已学、已到课但未出题的测学不算欠账；二遍学习计入实际完成。
+    const {current:paceCurrentSet, prior:pacePriorSet}=studySets(stu);
+    const pacePlanLesson={};
+    P.lessons.forEach((L,k)=>L.names.forEach(n=>{ if(!(n in pacePlanLesson)) pacePlanLesson[n]=k+1; }));
     const expectedNames=new Set();
     const actualPlanNames=new Set();
     aCuts.forEach((c,ci)=>{
@@ -1408,8 +1412,17 @@ function renderProgress(stu, grade, inGrade){
         const n=t.rows[i]&&t.rows[i].m;
         if(n&&planCounted(P,n,t)) actualPlanNames.add(n);
       });
-      const missing=[...expectedNames].filter(n=>!actualPlanNames.has(n));
-      const ahead=[...actualPlanNames].filter(n=>!expectedNames.has(n));
+      // 二遍活动从同一模再次学习的日期起计入；只累计到当前课日期，避免未来学习倒灌到早期课次。
+      for(const [n,days] of Object.entries(sp.byMod||{})){
+        if(planCounted(P,n,t) && days.some(d=>d<=c.date)) actualPlanNames.add(n);
+      }
+      const excludedKnown=new Set([...expectedNames].filter(n=>
+        !paceCurrentSet.has(n) &&
+        (pacePriorSet.has(n) || (isCe(P.types[n]) && (pacePlanLesson[n]||1)<=pk))
+      ));
+      const effectiveExpected=new Set([...expectedNames].filter(n=>!excludedKnown.has(n)));
+      const missing=[...effectiveExpected].filter(n=>!actualPlanNames.has(n));
+      const ahead=[...actualPlanNames].filter(n=>!effectiveExpected.has(n));
       const missingMin=missing.reduce((sum,n)=>sum+(Number(P.dur[n])||0),0);
       const aheadMin=ahead.reduce((sum,n)=>sum+(Number(P.dur[n])||0),0);
       const delta=Math.round(missingMin-aheadMin);
@@ -1417,7 +1430,7 @@ function renderProgress(stu, grade, inGrade){
       lastPaceInfo={slow, mins};
       if(mins<3){ paceHtmlByNo[c.no]=''; return; }
       const hrs=(mins/60).toFixed(1);
-      paceHtmlByNo[c.no]=`<span class="pace-badge ${slow?'slow':'fast'}" title="实际第${c.no}课按内容对应计划第${pk}课；计划内未完成 ${missing.length} 个、提前完成 ${ahead.length} 个，折算相差 ${mins}min">${slow?'慢':'快'} ${hrs}h</span>`;
+      paceHtmlByNo[c.no]=`<span class="pace-badge ${slow?'slow':'fast'}" title="实际第${c.no}课按内容对应计划第${pk}课；计划内未完成 ${missing.length} 个、提前完成 ${ahead.length} 个，已排除历史已学/测学未出题 ${excludedKnown.size} 个，折算相差 ${mins}min">${slow?'慢':'快'} ${hrs}h</span>`;
     });
   }
   const planTags = pCuts.filter(c=>c.upto>actualIdx);   // 已完成的进度不再显示计划课次
