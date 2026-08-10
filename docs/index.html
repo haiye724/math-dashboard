@@ -131,6 +131,16 @@ input[type=file]{display:none}
 }
 .stage-score{font-size:14px;color:var(--ink-mid);margin-top:3px}
 .stage-score b{color:var(--ink-deep);font-size:15px}
+.view-switch{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:10px 0 14px}
+.view-switch .switch-label{font-size:12px;color:var(--ink-mid);margin-right:2px}
+.switch-btn{
+  border:1px solid var(--line);background:var(--card);color:var(--ink-mid);
+  border-radius:7px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;
+}
+.switch-btn:hover{border-color:var(--actual-2);color:var(--ink-deep)}
+.switch-btn.active{background:var(--ink-deep);border-color:var(--ink-deep);color:#fff}
+.switch-btn:disabled{opacity:.45;cursor:not-allowed}
+.progress-switch{margin:0 0 14px}
 @media (max-width:640px){
   .stage-head h2{font-size:19px}
   .stage-score{font-size:13px}
@@ -293,8 +303,7 @@ input[type=file]{display:none}
 }
 .vchap-head .cnt{font-size:11px;color:var(--ink-faint);font-weight:400;font-family:"PingFang SC","Microsoft YaHei",sans-serif}
 .vgrid{display:grid;grid-template-columns:1fr 56px 178px;gap:0 12px}
-.vhead.with2{grid-template-columns:1fr 56px 150px 118px}
-.vgrid.with2{grid-template-columns:1fr 56px 150px 118px}
+.vhead.mode-both,.vgrid.mode-both{grid-template-columns:1fr 46px 128px 46px 108px}
 .vbar{
   position:relative;background:#F1F4F6;border:1px solid var(--line);
   border-radius:5px;overflow:hidden;align-self:stretch;
@@ -379,7 +388,8 @@ input[type=file]{display:none}
 .lesson-tag.plan-tag{background:var(--plan);color:var(--ink-deep)}
 @media (max-width:640px){
   .vhead,.vgrid{grid-template-columns:1fr 36px 92px;gap:0 8px}
-  .vhead.with2,.vgrid.with2{grid-template-columns:1fr 30px 76px 76px}
+  .vhead.mode-both,.vgrid.mode-both{grid-template-columns:1fr 27px 70px 27px 70px;gap:0 5px}
+  .switch-btn{padding:6px 10px}
 }
 @media (min-width:900px){
   .pcols{display:flex;gap:44px;align-items:flex-start}
@@ -512,7 +522,13 @@ footer{margin-top:28px;font-size:11px;color:var(--ink-faint);text-align:center;l
     <div class="stage-score" id="stageScore"></div>
   </div>
 
-  <div class="cards cards-stack">
+  <div class="view-switch" id="stageSwitch" aria-label="统计阶段">
+    <span class="switch-label">统计阶段</span>
+    <button class="switch-btn active" data-stage="summer" type="button">暑假</button>
+    <button class="switch-btn" data-stage="fall" type="button">秋季</button>
+  </div>
+
+  <div class="cards cards-stack" id="summerCards">
     <!-- 已学过关率（暑期内容目标） -->
     <div class="card">
       <h2 class="big-title">已学过关率<span class="title-badge" id="learnedTitleBadge" style="display:none"></span></h2>
@@ -573,44 +589,53 @@ footer{margin-top:28px;font-size:11px;color:var(--ink-faint);text-align:center;l
 
   <div class="cards cards-stack" id="fallCards" style="display:none">
     <div class="card">
-      <h2 class="big-title" style="color:#2F7048">秋季 · 已学过关率<span class="title-badge" style="background:#E6F2EA;color:#2F7048;border:1px solid #3E8E5A">二遍</span></h2>
-      <div class="desc">秋季规划内、二遍学过的知识点记录过关率</div>
+      <h2 class="big-title">已学过关率<span class="title-badge" id="learnedTitleBadgeF" style="display:none"></span></h2>
+      <div class="desc">第1次课日期起、秋季规划内学过的知识点中，标记为「过关」的比例（按记录条数计）</div>
       <div class="rate-flex">
         <div class="ring-wrap">
           <svg viewBox="0 0 132 132" width="132" height="132">
             <circle class="ring-bg" cx="66" cy="66" r="56" fill="none" stroke-width="12"/>
             <circle class="ring-val" id="ringLearnedF" cx="66" cy="66" r="56" fill="none" stroke-width="12"
-              stroke-linecap="round" stroke-dasharray="351.86" stroke-dashoffset="351.86" style="stroke:#3E8E5A"/>
+              stroke-linecap="round" stroke-dasharray="351.86" stroke-dashoffset="351.86"/>
+            <line class="ring-tick" x1="66" y1="4" x2="66" y2="18" transform="rotate(54 66 66)"/>
           </svg>
+          <span class="ring-tick-label" id="learnedTickLabelF">目标90%</span>
           <div class="ring-center">
             <div class="pct" id="learnedPctF">–</div>
-            <div class="cap">二遍过关率</div>
+            <div class="cap">已学过关率</div>
           </div>
         </div>
         <div class="rate-detail">
-          <div class="row"><span>学过</span><span class="num" id="learnedTotalF">–</span></div>
+          <div class="row"><span>学过知识点（条）</span><span class="num" id="learnedTotalF">–</span></div>
           <div class="row"><span>过关</span><span class="num pass" id="learnedPassF">–</span></div>
           <div class="row"><span>未过关</span><span class="num fail" id="learnedFailF">–</span></div>
+          <div class="date-ctl">
+            <span>第1次课日期</span>
+            <input type="date" id="startDateF">
+            <button class="link-btn" id="resetDateF">使用计划日期</button>
+          </div>
         </div>
       </div>
     </div>
     <div class="card">
-      <h2 class="big-title" style="color:#2F7048">秋季 · 进度情况<span class="title-badge" style="background:#E6F2EA;color:#2F7048;border:1px solid #3E8E5A">二遍</span></h2>
-      <div class="desc">二遍已学知识点数量 / 秋季计划知识点总数</div>
+      <h2 class="big-title">进度情况<span class="title-badge" id="paceTitleBadgeF" style="display:none"></span></h2>
+      <div class="desc" id="paceDescF">已学知识点数量 / 本期计划知识点总数（测学与必学统一计入，并扣除暑假实际已学）</div>
       <div class="rate-flex">
         <div class="ring-wrap">
           <svg viewBox="0 0 132 132" width="132" height="132">
             <circle class="ring-bg" cx="66" cy="66" r="56" fill="none" stroke-width="12"/>
             <circle class="ring-val" id="ringPaceF" cx="66" cy="66" r="56" fill="none" stroke-width="12"
-              stroke-linecap="round" stroke-dasharray="351.86" stroke-dashoffset="351.86" style="stroke:#3E8E5A"/>
+              stroke-linecap="round" stroke-dasharray="351.86" stroke-dashoffset="351.86"/>
+            <line class="ring-tick" id="paceTickF" x1="66" y1="4" x2="66" y2="18" style="display:none"/>
           </svg>
+          <span class="ring-tick-label" id="paceTickLabelF" style="display:none"></span>
           <div class="ring-center">
             <div class="pct" id="pacePctF">–</div>
-            <div class="cap">二遍进度</div>
+            <div class="cap">进度情况</div>
           </div>
         </div>
         <div class="rate-detail">
-          <div class="row"><span>计划总数</span><span class="num" id="paceDenF">–</span></div>
+          <div class="row"><span>计划知识点总数</span><span class="num" id="paceDenF">–</span></div>
           <div class="row"><span>已学</span><span class="num pass" id="paceNumF">–</span></div>
           <div class="row"><span>未学</span><span class="num" id="paceRestF">–</span></div>
         </div>
@@ -619,6 +644,11 @@ footer{margin-top:28px;font-size:11px;color:var(--ink-faint);text-align:center;l
   </div>
 
   <div class="progress-card">
+    <div class="view-switch progress-switch" id="progressSwitch" aria-label="进度条显示方式">
+      <span class="switch-label">进度条</span>
+      <button class="switch-btn active" data-progress-pass="first" type="button" aria-pressed="true">一遍学</button>
+      <button class="switch-btn active" data-progress-pass="second" type="button" aria-pressed="true">二遍学</button>
+    </div>
     <div class="plan-hint" id="planHint">尚未导入该学生的计划进度（学生课次明细表），浅色计划条暂为空。点右上角「导入计划进度」上传。</div>
     <div id="progressBody"></div>
   </div>
@@ -664,6 +694,14 @@ let plansFall = RAW.plansFall || {};   // 秋季规划（期中前+期末前顺�
 let lastPaceInfo = null;    // 最近一次课的快慢 {slow, mins}
 let avgLessonMin = 0;       // 计划平均每课时长   // {学生: [题模名称]} 全量统计中出现过=有学习数据（含7.8前）        // {学生: {lessons:[{no,date,names}], dur:{}, types:{}}} 或旧格式数组
 const FIRST_LESSON_KEY='mathDashboardFirstLessonDatesV1';
+const FALL_FIRST_LESSON_KEY='mathDashboardFallFirstLessonDatesV1';
+const VIEW_PREF_KEY='mathDashboardViewPrefsV1';
+function loadViewPrefs(){
+  try{ return JSON.parse(localStorage.getItem(VIEW_PREF_KEY)||'{}')||{}; }catch(e){ return {}; }
+}
+function saveViewPrefs(){
+  try{ localStorage.setItem(VIEW_PREF_KEY,JSON.stringify({stage:state.stage,progressFirst:state.progressFirst,progressSecond:state.progressSecond})); }catch(e){}
+}
 function loadFirstLessonDates(){
   let saved={};
   try{ saved=JSON.parse(localStorage.getItem(FIRST_LESSON_KEY)||'{}')||{}; }catch(e){}
@@ -675,7 +713,28 @@ function loadFirstLessonDates(){
   }catch(e){}
   return saved;
 }
-let state = { student:null, gradeOverride:{}, firstLessonDates:loadFirstLessonDates() };
+function loadFallFirstLessonDates(){
+  let saved={};
+  try{ saved=JSON.parse(localStorage.getItem(FALL_FIRST_LESSON_KEY)||'{}')||{}; }catch(e){}
+  try{
+    new URL(location.href).searchParams.getAll('firstFall').forEach(v=>{
+      const k=v.lastIndexOf('@'), d=v.slice(k+1);
+      if(k>0 && /^\d{4}-\d{2}-\d{2}$/.test(d)) saved[v.slice(0,k)]=d;
+    });
+  }catch(e){}
+  return saved;
+}
+const viewPrefs=loadViewPrefs();
+const oldProgressMode=viewPrefs.progressMode;
+let state = {
+  student:null,
+  gradeOverride:{},
+  firstLessonDates:loadFirstLessonDates(),
+  fallFirstLessonDates:loadFallFirstLessonDates(),
+  stage:viewPrefs.stage==='fall'?'fall':'summer',
+  progressFirst:typeof viewPrefs.progressFirst==='boolean'?viewPrefs.progressFirst:oldProgressMode!=='second',
+  progressSecond:typeof viewPrefs.progressSecond==='boolean'?viewPrefs.progressSecond:oldProgressMode!=='first'
+};
 function recordDays(r){
   // 新数据即使 acts 为空也不退回 dt：这通常表示只有消错题作答，不能计入学习进度。
   return (Array.isArray(r.acts)? r.acts : (r.dt?[r.dt]:[])).filter(Boolean);
@@ -689,6 +748,14 @@ function defaultFirstLessonDate(stu){
 function firstLessonDate(stu){
   return state.firstLessonDates[stu] || defaultFirstLessonDate(stu);
 }
+function defaultFallFirstLessonDate(stu){
+  const P=plansFall[stu];
+  if(P && P.lessons && P.lessons.length && P.lessons[0].date) return P.lessons[0].date;
+  return firstLessonDate(stu);
+}
+function fallFirstLessonDate(stu){
+  return state.fallFirstLessonDates[stu] || defaultFallFirstLessonDate(stu);
+}
 function saveFirstLessonDates(){
   try{ localStorage.setItem(FIRST_LESSON_KEY,JSON.stringify(state.firstLessonDates)); }catch(e){}
   try{
@@ -696,6 +763,16 @@ function saveFirstLessonDates(){
     u.searchParams.delete('first');
     Object.entries(state.firstLessonDates).sort((a,b)=>a[0].localeCompare(b[0],'zh'))
       .forEach(([n,d])=>u.searchParams.append('first',`${n}@${d}`));
+    history.replaceState(null,'',u);
+  }catch(e){}
+}
+function saveFallFirstLessonDates(){
+  try{ localStorage.setItem(FALL_FIRST_LESSON_KEY,JSON.stringify(state.fallFirstLessonDates)); }catch(e){}
+  try{
+    const u=new URL(location.href);
+    u.searchParams.delete('firstFall');
+    Object.entries(state.fallFirstLessonDates).sort((a,b)=>a[0].localeCompare(b[0],'zh'))
+      .forEach(([n,d])=>u.searchParams.append('firstFall',`${n}@${d}`));
     history.replaceState(null,'',u);
   }catch(e){}
 }
@@ -835,11 +912,13 @@ function renderStudents(){
 /* ================= 渲染：学生信息 ================= */
 function renderMeta(stu, grade, excluded){
   const el=document.getElementById('stuMeta');
+  const isFall=state.stage==='fall';
+  const start=isFall?fallFirstLessonDate(stu):firstLessonDate(stu);
   el.innerHTML=`
     <span class="grade-badge">当前年级
       <select id="gradeSel">${GRADES.map(g=>`<option ${g===grade?'selected':''}>${g}</option>`).join('')}</select>
     </span>
-    <span class="course-start-note">第1次课：<b>${firstLessonDate(stu)}</b> · 更早数据仅补齐已进入章节</span>`;
+    <span class="course-start-note">${isFall?'秋季':''}第1次课：<b>${start}</b> · 更早数据不计入本阶段统计</span>`;
   document.getElementById('gradeSel').onchange=e=>{
     state.gradeOverride[stu]=e.target.value; renderAll();
   };
@@ -891,6 +970,20 @@ document.getElementById('resetDate').onclick=()=>{
   saveFirstLessonDates();
   renderAll();
 };
+document.getElementById('startDateF').addEventListener('change',e=>{
+  if(!state.student) return;
+  const d=e.target.value;
+  if(d) state.fallFirstLessonDates[state.student]=d;
+  else delete state.fallFirstLessonDates[state.student];
+  saveFallFirstLessonDates();
+  renderAll();
+});
+document.getElementById('resetDateF').onclick=()=>{
+  if(!state.student) return;
+  delete state.fallFirstLessonDates[state.student];
+  saveFallFirstLessonDates();
+  renderAll();
+};
 
 /* ================= 进度情况（暑期进度目标） ================= */
 /* 暑期未学数（与进度情况同口径）：>0 表示一遍尚未学完 */
@@ -912,42 +1005,77 @@ function summerRestOf(stu, grade){
   return rest;
 }
 
-/* 秋季（二遍）卡片：仅当有秋季规划时显示 */
+/* 秋季卡片：按秋季规划范围及秋季规划开始后的学习数据统计 */
 function renderFallCards(stu, grade){
   const box=document.getElementById('fallCards');
   const PF=plansFall[stu];
   if(!PF || !PF.lessons || !PF.lessons.length){ box.style.display='none'; return; }
-  if(plans[stu] && summerRestOf(stu, grade)>0){ box.style.display='none'; return; }   // 暑期没学完不显示秋季
   box.style.display='';
   const t=TREE[grade];
-  const fallSet=new Set(Object.keys(PF.dur).filter(n=>PF.types[n]!=='暑期总复习' && t.byName.has(n)));
-  const sp=secondPassOf(stu);
-  const fallStart=PF.lessons[0].date||'9999';
-  const learnedMods=new Set();
-  records.forEach(r=>{
-    if(r.n!==stu || !fallSet.has(r.m)) return;
-    if(sp.byMod[r.m]) learnedMods.add(r.m);
-    else if(r.acts && r.acts.length && r.acts[0]>=fallStart) learnedMods.add(r.m);
-  });
-  let pass=0, fail=0;
-  records.forEach(r=>{
-    if(r.n!==stu || !learnedMods.has(r.m)) return;
-    if(r.p) pass++; else fail++;
-  });
-  const total=pass+fail;
+  // 秋季计划中的测学与必学统一作为应学内容，不再按类型剔除。
+  const fallSet=new Set(Object.keys(PF.dur||{}).filter(n=>t.byName.has(n)));
+  const fallStart=fallFirstLessonDate(stu);
+  const di=document.getElementById('startDateF');
+  di.value=fallStart; di.min='2020-01-01';
+  di.title=`${stu} 的秋季第1次课从 ${fallStart} 开始统计`;
+  document.getElementById('resetDateF').textContent=PF.lessons[0]?.date?'使用计划日期':'使用暑假日期';
+  const rows=records.filter(r=>r.n===stu && fallSet.has(r.m) && recordDays(r).some(d=>d>=fallStart));
+  const learnedMods=new Set(rows.map(r=>r.m));
+  const total=rows.length, pass=rows.filter(r=>r.p).length, fail=total-pass;
   const pct1= total? pass/total : 0;
   setRing('ringLearnedF', pct1);
+  const lr=document.getElementById('ringLearnedF');
+  lr.style.stroke=total===0?'':(pct1>=0.9?'var(--pass)':(pct1>=0.8?'#D9A21B':'var(--fail)'));
+  placeTickLabel(document.getElementById('learnedTickLabelF'),0.9);
+  const ltb=document.getElementById('learnedTitleBadgeF');
+  if(total===0) ltb.style.display='none';
+  else{
+    ltb.style.display='';
+    if(pct1>=0.9){ ltb.className='title-badge ok'; ltb.textContent='优秀'; }
+    else if(pct1>=0.8){ ltb.className='title-badge warn'; ltb.textContent='待提升'; }
+    else{ ltb.className='title-badge bad'; ltb.textContent='需关注'; }
+  }
   document.getElementById('learnedPctF').textContent= total? (pct1*100).toFixed(1)+'%' : '–';
   document.getElementById('learnedTotalF').textContent=total;
   document.getElementById('learnedPassF').textContent=pass;
   document.getElementById('learnedFailF').textContent=fail;
-  const den=fallSet.size, num=learnedMods.size;
+  // 秋季进度分母是“秋季计划剩余任务”：从秋季计划中扣除该生暑假阶段实际学过的内容。
+  const summerStart=firstLessonDate(stu);
+  const summerLearned=new Set();
+  records.forEach(r=>{
+    if(r.n!==stu || !fallSet.has(r.m)) return;
+    if(recordDays(r).some(d=>d>=summerStart && d<fallStart)) summerLearned.add(r.m);
+  });
+  const fallProgressSet=new Set([...fallSet].filter(n=>!summerLearned.has(n)));
+  const progressLearnedMods=new Set([...learnedMods].filter(n=>fallProgressSet.has(n)));
+  const den=fallProgressSet.size, num=progressLearnedMods.size;
   const pct2= den? num/den : 0;
   setRing('ringPaceF', pct2);
   document.getElementById('pacePctF').textContent= den? (pct2*100).toFixed(1)+'%' : '–';
   document.getElementById('paceDenF').textContent=den;
   document.getElementById('paceNumF').textContent=num;
   document.getElementById('paceRestF').textContent=den-num;
+
+  // 与暑假相同，以已上课次数标出当前计划应到位置。
+  const attended=new Set(rows.flatMap(recordDays).filter(d=>d>=fallStart)).size;
+  const dueK=Math.min(attended,PF.lessons.length);
+  const dueNames=new Set();
+  for(let k=0;k<dueK;k++) (PF.lessons[k].names||[]).forEach(n=>{ if(fallProgressSet.has(n)) dueNames.add(n); });
+  const planPct=den?Math.min(1,dueNames.size/den):0;
+  const tick=document.getElementById('paceTickF');
+  const tickLabel=document.getElementById('paceTickLabelF');
+  if(den&&dueK>0){
+    tick.style.display='';
+    tick.setAttribute('transform',`rotate(${(planPct*360-270).toFixed(1)} 66 66)`);
+    tickLabel.style.display=''; tickLabel.textContent=`计划${Math.round(planPct*100)}%`;
+    placeTickLabel(tickLabel,planPct);
+  }else{ tick.style.display='none'; tickLabel.style.display='none'; }
+  const ptb=document.getElementById('paceTitleBadgeF');
+  const gap=planPct-pct2;
+  ptb.style.display=den?'':'none';
+  if(gap>0.15){ document.getElementById('ringPaceF').style.stroke='var(--fail)'; ptb.className='title-badge bad'; ptb.textContent='需关注'; }
+  else if(gap>0.05){ document.getElementById('ringPaceF').style.stroke='#D9A21B'; ptb.className='title-badge warn'; ptb.textContent='较慢'; }
+  else{ document.getElementById('ringPaceF').style.stroke=''; ptb.className='title-badge neutral'; ptb.textContent='正常'; }
 }
 
 function renderPaceStat(stu, grade){
@@ -1250,6 +1378,12 @@ function renderProgress(stu, grade, inGrade){
   const t=TREE[grade];
   const body=document.getElementById('progressBody');
   body.innerHTML='';
+  const mode=state.progressFirst?(state.progressSecond?'both':'first'):(state.progressSecond?'second':'none');
+  if(mode==='none'){
+    document.getElementById('planHint').style.display='none';
+    body.innerHTML='<div class="empty-state">一遍学和二遍学均已取消显示</div>';
+    return;
+  }
   const tgt0=planTarget(stu, grade);
   const aCuts=lessonCuts(stu, inGrade, grade);
 
@@ -1302,9 +1436,11 @@ function renderProgress(stu, grade, inGrade){
   const PALETTE=['#1F4E79'];    // 实际：单色，课次以白色实线分格
   const PPAL=['#BFD3E6'];       // 计划：单色，课次以白色虚线分格
 
-  // 列头（章节 ｜ 计划 ｜ 实际 ｜ 课次）
-  const vh=document.createElement('div'); vh.className='vhead';
-  vh.innerHTML='<span class="h3">章 / 节</span><span>进度</span><span>课次</span>';
+  // 列头：一遍学、二遍学使用各自独立的进度条，可按按钮单独或同时显示。
+  const vh=document.createElement('div'); vh.className='vhead'+(mode==='both'?' mode-both':'');
+  if(mode==='both') vh.innerHTML='<span class="h3">章 / 节</span><span>一遍</span><span>一遍课次</span><span>二遍</span><span>二遍课次</span>';
+  else if(mode==='second') vh.innerHTML='<span class="h3">章 / 节</span><span>二遍进度</span><span>二遍课次</span>';
+  else vh.innerHTML='<span class="h3">章 / 节</span><span>一遍进度</span><span>一遍课次</span>';
   body.appendChild(vh);
 
   // 计划覆盖的知识点序号集合（用于识别计划外的节）
@@ -1498,14 +1634,8 @@ function renderProgress(stu, grade, inGrade){
     // 每列各一组表头
     const vh0=body.querySelector(':scope > .vhead');
     if(vh0){
-      if(hasSecond){ vh0.classList.add('with2'); vh0.innerHTML='<span class="h3">章 / 节</span><span>进度</span><span>课次</span><span>二遍课次</span>'; }
       c1.appendChild(vh0); c2.appendChild(vh0.cloneNode(true));
     }
-  }
-
-  if(hasSecond && !twoCol){
-    const vh1=body.querySelector(':scope > .vhead');
-    if(vh1){ vh1.classList.add('with2'); vh1.innerHTML='<span class="h3">章 / 节</span><span>进度</span><span>课次</span><span>二遍</span>'; }
   }
 
   frags.forEach((fg,fi)=>{
@@ -1543,22 +1673,31 @@ function renderProgress(stu, grade, inGrade){
     head.innerHTML=`<div class="name"><span>${ch.name.replace(/☽/g,'')}${fg.cont?'（续）':''}${chapTags}${fFail?`<span class="fail-badge chap">未过关 ${fFail}</span>`:''}</span></div>`;
     wrap.appendChild(head);
 
-    const grid=document.createElement('div'); grid.className='vgrid';
+    const grid=document.createElement('div'); grid.className='vgrid'+(mode==='both'?' mode-both':'');
     const bar=document.createElement('div'); bar.className='vbar';
     bar.style.gridColumn='2';
     bar.style.gridRow=`1 / span ${fg.secs.length}`;
     grid.appendChild(bar);
     const lcol=document.createElement('div'); lcol.className='vlessoncol';
-    lcol.style.gridColumn='3';
-    lcol.style.gridRow=`1 / span ${fg.secs.length}`;
-    grid.appendChild(lcol);
-    let lcol2=null;
-    if(hasSecond){
-      grid.classList.add('with2');
+    let bar2=null, lcol2=null;
+    if(mode==='both'){
+      bar2=document.createElement('div'); bar2.className='vbar second-progress';
+      bar2.style.gridColumn='4'; bar2.style.gridRow=`1 / span ${fg.secs.length}`;
+      grid.appendChild(bar2);
+      lcol.style.gridColumn='3'; lcol.style.gridRow=`1 / span ${fg.secs.length}`;
+      grid.appendChild(lcol);
       lcol2=document.createElement('div'); lcol2.className='vlessoncol vlessoncol2';
-      lcol2.style.gridColumn='4';
+      lcol2.style.gridColumn='5';
       lcol2.style.gridRow=`1 / span ${fg.secs.length}`;
       grid.appendChild(lcol2);
+    }else if(mode==='second'){
+      // paintBar 仍以可见进度条计算几何；一遍课次列保留为离屏容器，不加入页面。
+      lcol2=document.createElement('div'); lcol2.className='vlessoncol vlessoncol2';
+      lcol2.style.gridColumn='3'; lcol2.style.gridRow=`1 / span ${fg.secs.length}`;
+      grid.appendChild(lcol2);
+    }else{
+      lcol.style.gridColumn='3'; lcol.style.gridRow=`1 / span ${fg.secs.length}`;
+      grid.appendChild(lcol);
     }
 
     const labelEls=[];
@@ -1581,11 +1720,15 @@ function renderProgress(stu, grade, inGrade){
     });
     wrap.appendChild(grid);
     ((twoCol && fi>=splitFragIdx)? c2 : c1).appendChild(wrap);
-    paintJobs.push({bar, lcol, lcol2, ch:fragCh, labelEls});
+    paintJobs.push({bar, bar2, lcol, lcol2, ch:fragCh, labelEls});
   });
 
   // 依据节名行的实际几何位置，把课次段画到连续进度条上（拆列后再绘制，保证几何正确）
-  paintJobs.forEach(j=>paintBar(j.bar, j.lcol, j.ch, j.labelEls, pCuts, aCuts, PPAL, PALETTE, t, secSkipped, cntText, failLC, failMax, paceHtmlByNo, planTags, shortD, j.lcol2, cuts2, secondStartIdx));
+  paintJobs.forEach(j=>{
+    paintBar(j.bar, j.lcol, j.ch, j.labelEls, pCuts, aCuts, PPAL, PALETTE, t, secSkipped, cntText, failLC, failMax, paceHtmlByNo, planTags, shortD, j.lcol2, cuts2, secondStartIdx, j.bar2);
+    if(mode==='first') j.bar.querySelectorAll('.act2-seg').forEach(el=>el.remove());
+    if(mode==='second') j.bar.querySelectorAll('.plan-seg,.act-seg,.act-divider,.fail-mark,.skip-seg').forEach(el=>el.remove());
+  });
 }
 /* 模序号 -> 进度条内像素位置（节内按知识点数线性插值） */
 function makeYMapper(bar, ch, labelEls){
@@ -1605,12 +1748,15 @@ function makeYMapper(bar, ch, labelEls){
   };
 }
 /* 一章的进度条：浅色计划打底；深色只覆盖真实学过的知识点，课次标签按当天内容定位 */
-function paintBar(bar, lcol, ch, labelEls, pCuts, aCuts, ppal, apal, t, secSkipped, cntTextRef, failLC, failMax, paceHtmlByNo, planTags, shortD, lcol2, cuts2, secondStartIdx){
+function paintBar(bar, lcol, ch, labelEls, pCuts, aCuts, ppal, apal, t, secSkipped, cntTextRef, failLC, failMax, paceHtmlByNo, planTags, shortD, lcol2, cuts2, secondStartIdx, secondBar){
   const MIN=22;
   lcol.innerHTML='';
   if(lcol2) lcol2.innerHTML='';
   bar.innerHTML='';
   const yOf=makeYMapper(bar, ch, labelEls);
+  const greenBar=secondBar||bar;
+  if(secondBar) secondBar.innerHTML='';
+  const yOf2=secondBar?makeYMapper(secondBar,ch,labelEls):yOf;
   const chEnd=ch.start+ch.len-1;
   let actualPaintRanges=[];
 
@@ -1747,20 +1893,20 @@ function paintBar(bar, lcol, ch, labelEls, pCuts, aCuts, ppal, apal, t, secSkipp
       let labelY=null;
       if(target>prevFar2){
         const from=prevFar2>=ch.start ? prevFar2+1 : ch.start;
-        const y1=yOf(from,false), y2=yOf(target,true);
+        const y1=yOf2(from,false), y2=yOf2(target,true);
         if(y1!=null&&y2!=null){
           const seg=document.createElement('div');
           seg.className='act2-seg';
           seg.style.top=y1+'px';
           seg.style.height=Math.max(2,y2-y1)+'px';
           seg.dataset.tip=`第${c.no}课（二遍）｜${c.date}`;
-          bar.appendChild(seg); hookTip(seg);
+          greenBar.appendChild(seg); hookTip(seg);
           labelY=y2;
         }
         prevFar2=target;
       }else{
         // 只回头复习时不重复切割绿色条，仅保留该次课标签。
-        const y1=yOf(learnedTo,false), y2=yOf(learnedTo,true);
+        const y1=yOf2(learnedTo,false), y2=yOf2(learnedTo,true);
         if(y1!=null&&y2!=null) labelY=(y1+y2)/2;
       }
       if(lcol2){
@@ -2029,6 +2175,41 @@ function toast(msg){
 
 
 /* ================= 总渲染 ================= */
+function renderViewSwitches(stu){
+  const hasFall=!!(plansFall[stu] && plansFall[stu].lessons && plansFall[stu].lessons.length);
+  if(state.stage==='fall' && !hasFall) state.stage='summer';
+  document.querySelectorAll('#stageSwitch [data-stage]').forEach(btn=>{
+    const v=btn.dataset.stage;
+    btn.classList.toggle('active',v===state.stage);
+    btn.setAttribute('aria-pressed',String(v===state.stage));
+    if(v==='fall'){
+      btn.disabled=!hasFall;
+      btn.title=hasFall?'切换到秋季统计':'尚未导入该学生的秋季规划';
+    }
+  });
+  document.querySelectorAll('#progressSwitch [data-progress-pass]').forEach(btn=>{
+    const on=btn.dataset.progressPass==='first'?state.progressFirst:state.progressSecond;
+    btn.classList.toggle('active',on);
+    btn.setAttribute('aria-pressed',String(on));
+  });
+}
+
+document.getElementById('stageSwitch').addEventListener('click',e=>{
+  const btn=e.target.closest('[data-stage]');
+  if(!btn || btn.disabled) return;
+  state.stage=btn.dataset.stage;
+  saveViewPrefs();
+  renderAll();
+});
+document.getElementById('progressSwitch').addEventListener('click',e=>{
+  const btn=e.target.closest('[data-progress-pass]');
+  if(!btn) return;
+  if(btn.dataset.progressPass==='first') state.progressFirst=!state.progressFirst;
+  else state.progressSecond=!state.progressSecond;
+  saveViewPrefs();
+  renderAll();
+});
+
 function renderAll(){
   const list=studentList();
   if(!list.length){
@@ -2040,14 +2221,21 @@ function renderAll(){
   renderStudents();
   const stu=state.student, grade=detectGrade(stu);
   const {inGrade, excluded}=gradeRecords(stu, grade);
+  renderViewSwitches(stu);
   renderMeta(stu, grade, excluded);
   document.getElementById('stageName').textContent = stu + ' 阶段学情';
   const pm = plans[stu] && !Array.isArray(plans[stu]) ? plans[stu].meta : null;
   document.getElementById('stageScore').innerHTML = (pm && pm.score!=null) ? `目标分数：<b>${pm.score}</b>` : '';
-  renderLearned(stu, grade, inGrade);
+  const summer=state.stage==='summer';
+  document.getElementById('summerCards').style.display=summer?'':'none';
+  document.getElementById('fallCards').style.display=summer?'none':'';
+  if(summer){
+    renderLearned(stu, grade, inGrade);
+    renderPaceStat(stu, grade);
+  }else{
+    renderFallCards(stu, grade);
+  }
   renderProgress(stu, grade, inGrade);
-  renderPaceStat(stu, grade);
-  renderFallCards(stu, grade);
 }
 renderStudents();
 /* ===== 页面直传：把文件上传到共享仓库的 uploads/，由 Action 自动构建 ===== */
