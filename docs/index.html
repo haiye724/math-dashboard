@@ -1782,22 +1782,40 @@ function paintBar(bar, lcol, ch, labelEls, pCuts, aCuts, ppal, apal, t, secSkipp
     });
   }
 
-  // ---- 实际（同一课、同一章连续填色；跨章断开；选学/不学不阻断连续进度） ----
+  // ---- 实际（同一课、同一章连续填色；跨章或“不在计划范围内”的专题必须断开） ----
   {
     const cellCenter={};
     const required=new Set(aCuts.requiredIdx||[]);
-    const rawRanges=(aCuts.fillRanges||[])
+    const noFill=new Set();
+    labelEls.forEach(({s})=>{
+      if(!secSkipped(s)) return;
+      for(let i=s.start;i<s.start+s.len;i++) noFill.add(i);
+    });
+    const sourceRanges=(aCuts.fillRanges||[])
       .filter(r=>r.upto>=ch.start&&r.from<=chEnd)
       .map(r=>({from:Math.max(r.from,ch.start),to:Math.min(r.upto,chEnd)}))
       .sort((a,b)=>a.from-b.from||a.to-b.to);
-    // 相邻两段之间若没有漏掉必学/测学，则跨过选学、不学和回顾内容连成一片。
+    // 当天首尾内容形成的原始区间也可能跨过整段“不学”；先把这些位置从色块中切掉。
+    const rawRanges=[];
+    sourceRanges.forEach(r=>{
+      let from=null;
+      for(let i=r.from;i<=r.to;i++){
+        if(noFill.has(i)){
+          if(from!=null) rawRanges.push({from,to:i-1});
+          from=null;
+        }else if(from==null) from=i;
+      }
+      if(from!=null) rawRanges.push({from,to:r.to});
+    });
+    rawRanges.sort((a,b)=>a.from-b.from||a.to-b.to);
+    // 相邻两段只有在中间既无遗漏必学/测学、也无“不学”专题时才连接。
     rawRanges.forEach(r=>{
       const last=actualPaintRanges[actualPaintRanges.length-1];
       if(!last){ actualPaintRanges.push({...r}); return; }
       let blocks=false;
       if(r.from>last.to+1){
         for(let i=last.to+1;i<r.from;i++){
-          if(required.has(i)){ blocks=true; break; }
+          if(required.has(i)||noFill.has(i)){ blocks=true; break; }
         }
       }
       if(r.from<=last.to+1 || (required.size&&!blocks)) last.to=Math.max(last.to,r.to);
