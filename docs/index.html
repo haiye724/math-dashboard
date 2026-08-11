@@ -669,7 +669,7 @@ footer{margin-top:28px;font-size:11px;color:var(--ink-faint);text-align:center;l
       <tr><th>学生姓名</th><th>阶段</th><th>课次</th><th>上课日期</th><th>题模名称</th><th>学习时长(min)</th><th>类型</th></tr>
       <tr><td>黄子涵</td><td>☀️ 暑期</td><td>第1次课</td><td>2026-07-08</td><td>按边角将三角形分类</td><td>3</td><td>测学</td></tr>
     </table>
-    <p>目前只取「阶段」含<b>暑期</b>的行；课次即计划进度；类型中<b>必学=一遍规划、测学（含测学(进度)）=二遍规划</b>；学习时长用于计算实际较计划快/慢多少分钟。多名学生可放在同一张表。</p>
+    <p>暑期规划按课次顺序拆分轮次：首次向后推进显示在一遍进度条，大幅回到前面章节后从该课起显示在二遍进度条；<b>秋季规划全部显示在二遍进度条</b>。测学和必学均计入规划，规划课次数量与表格保持一致。</p>
     <div class="actions"><button class="btn primary" id="tplClose">知道了</button></div>
   </div>
 </div>
@@ -1177,10 +1177,10 @@ function setRing(id,pct){
 
 /* ================= 进度 ================= */
 const LAST_MODULE_PLAN_GAP_LIMIT=30;   // 与前一模相差超过30个必学/测学知识点，才视为异常跳点
-function lessonCuts(stu, inGrade, grade){
+function lessonCuts(stu, inGrade, grade, firstDateOverride=null, endDate=null, planOverride=null){
   const t=TREE[grade];
-  const P=plans[stu];
-  const firstDate=firstLessonDate(stu);
+  const P=planOverride||plans[stu];
+  const firstDate=firstDateOverride||firstLessonDate(stu);
   // 一遍活动日期：优先用有效活动；无 acts 的旧数据退回 dt。
   // 课次从设置的第1次课日期开始；更早的有效学习只补齐本轮已经进入的章节。
   const sp0=secondPassOf(stu, firstDate, grade);
@@ -1188,7 +1188,7 @@ function lessonCuts(stu, inGrade, grade){
     const days=recordDays(r);
     if(!Array.isArray(r.acts)) return days;
     const sec=new Set(sp0.byMod[r.m]||[]);
-    return days.filter(d=>!sec.has(d));
+    return days.filter(d=>!sec.has(d) && (!endDate||d<endDate));
   };
   // 每天从最前一模连续填到最后一模；异常跳到远处的最后一模不参与填色。
   const allByDate={};
@@ -1204,6 +1204,7 @@ function lessonCuts(stu, inGrade, grade){
     if(Array.isArray(r.acts)) explicitActivityNames.add(r.m);
     if(recordDays(r).length) recordedNames.add(r.m);
     firstDatesOf(r).forEach(d=>{
+      if(endDate&&d>=endDate) return;
       datedNames.add(r.m);
       if(d<firstDate){
         (historyByDate[d]=historyByDate[d]||new Set()).add(idx);
@@ -1283,7 +1284,7 @@ function lessonCuts(stu, inGrade, grade){
       fillRanges.push({date:'', from:idx, upto:idx, historical:true});
     }
   });
-  const ds=Object.keys(dayInfo).filter(d=>d>=firstDate).sort();
+  const ds=Object.keys(dayInfo).filter(d=>d>=firstDate&&(!endDate||d<endDate)).sort();
   const cuts=[];
   ds.forEach((d,i)=>{
     const x=dayInfo[d];
@@ -1294,13 +1295,17 @@ function lessonCuts(stu, inGrade, grade){
   cuts.fillRanges=fillRanges;
   return cuts;
 }
-function planCuts(stu, grade, pass='first'){
+const PLAN_SECOND_PASS_BACKTRACK=60;
+function planCuts(stu, grade, stage='summer'){
   const t=TREE[grade];
-  const p=plans[stu];
+  const p=stage==='fall'?plansFall[stu]:plans[stu];
   if(!p) return [];
-  const cuts=[]; let far=-1;
-  if(Array.isArray(p)){                      // 旧格式没有轮次字段，只作为一遍规划
-    if(pass==='second') return [];
+  const cuts=[];
+  let round=stage==='fall'?2:1;
+  let firstFar=-1;
+  const laneFar={1:-1,2:-1};
+  if(Array.isArray(p)){                      // 旧格式仅用于暑假规划
+    if(stage==='fall') return [];
     p.slice().sort((a,b)=>a.date<b.date?-1:1).forEach((pl,k)=>{
       let idx;
       if(t.byName.has(pl.target)) idx=t.byName.get(pl.target);
@@ -1312,21 +1317,24 @@ function planCuts(stu, grade, pass='first'){
         }
       }
       if(idx===undefined || !t.inReal(idx)) return;
-      if(idx>far){ far=idx; cuts.push({date:pl.date, upto:far, no:k+1}); }
+      laneFar[1]=Math.max(laneFar[1],idx);
+      cuts.push({date:pl.date,upto:laneFar[1],anchor:idx,idxs:[idx],no:k+1,round:1});
     });
     return cuts;
   }
-  // 课次明细格式：每次课为一个计划进度格
+  // 课次明细格式：严格保留表格中的每一次计划课，不因内容回头或未向后推进而合并。
   p.lessons.forEach(L=>{
-    let adv=false;
-    L.names.forEach(n=>{
-      const ty=p.types[n];
-      const matches=pass==='second' ? isCe(ty) : ty==='必学';
-      if(!matches || !planCounted(p,n,t)) return;
-      const i=t.byName.get(n);
-      if(i!==undefined && t.inReal(i) && i>far){ far=i; adv=true; }
-    });
-    if(adv) cuts.push({date:L.date, upto:far, no:L.no});
+    const idxs=L.names.filter(n=>planCounted(p,n,t)).map(n=>t.byName.get(n))
+      .filter(i=>i!==undefined&&t.inReal(i));
+    let anchor=idxs.length?Math.max(...idxs):(laneFar[round]>=0?laneFar[round]:(t.real[0]?t.real[0].start:null));
+    if(anchor==null) return;
+    // 暑假规划中，一遍已推进很远后若大幅回到前面内容，从该课起视为二遍规划。
+    if(stage==='summer'&&round===1&&firstFar>=0&&firstFar-anchor>PLAN_SECOND_PASS_BACKTRACK){
+      round=2;
+    }
+    laneFar[round]=Math.max(laneFar[round],anchor);
+    if(round===1) firstFar=Math.max(firstFar,anchor);
+    cuts.push({date:L.date,upto:laneFar[round],anchor,idxs,no:L.no,round});
   });
   return cuts;
 }
@@ -1371,7 +1379,9 @@ function planCounted(P, n, t){
 
 /* 计划目标学习范围（测学=提升 + 必学=预习 的知识点合集） */
 function planTarget(stu, grade){
-  const p=plans[stu];
+  return planTargetOf(plans[stu],grade);
+}
+function planTargetOf(p, grade){
   if(!p || Array.isArray(p)) return null;
   const t=grade? TREE[grade] : null;
   const set=new Set(Object.keys(p.dur).filter(n=>planCounted(p,n,t)));
@@ -1389,12 +1399,20 @@ function renderProgress(stu, grade, inGrade){
     body.innerHTML='<div class="empty-state">一遍学和二遍学均已取消显示</div>';
     return;
   }
-  const tgt0=planTarget(stu, grade);
-  const aCuts=lessonCuts(stu, inGrade, grade);
+  const activePlan=state.stage==='fall'?plansFall[stu]:plans[stu];
+  const tgt0=planTargetOf(activePlan,grade);
+  const stageStart=state.stage==='fall'?fallFirstLessonDate(stu):firstLessonDate(stu);
+  const stageEnd=state.stage==='summer'&&plansFall[stu]?fallFirstLessonDate(stu):null;
+  const aCuts=lessonCuts(stu,inGrade,grade,stageStart,stageEnd,activePlan);
 
   // —— 二遍学：课次切分（有效活动第二轮）——
   // 只要出现明确的再次学习，就展示二遍；不再要求整份暑期规划先全部学完。
-  const sp = secondPassOf(stu, firstLessonDate(stu), grade);
+  const spRaw=secondPassOf(stu,stageStart,grade);
+  const sp={byMod:{},dates:spRaw.dates.filter(d=>!stageEnd||d<stageEnd)};
+  for(const [n,ds] of Object.entries(spRaw.byMod)){
+    const kept=ds.filter(d=>d>=stageStart&&(!stageEnd||d<stageEnd));
+    if(kept.length) sp.byMod[n]=kept;
+  }
   const hasSecond = sp.dates.length>0;
   let cuts2=[], secondStartIdx=-1, secondModIdx=new Set();
   if(hasSecond){
@@ -1420,7 +1438,7 @@ function renderProgress(stu, grade, inGrade){
     }
   }
 
-  // —— 全局课次编号：一遍与二遍按日期统一连续排号 ——
+  // —— 实际课次：同一阶段内按日期编号；切换暑假/秋季后各自从第1课重新计算 ——
   {
     const allDays=Array.from(new Set([...aCuts.map(c=>c.date), ...(hasSecond? sp.dates:[])])).sort();
     const dayNo={}; allDays.forEach((d,i)=>dayNo[d]=i+1);
@@ -1428,14 +1446,15 @@ function renderProgress(stu, grade, inGrade){
     cuts2.forEach(c=>{ c.no=dayNo[c.date]||c.no; });
   }
 
-  const pCuts=planCuts(stu, grade, 'first');
-  const pCuts2=planCuts(stu, grade, 'second');
+  // 暑假规划按“大幅回头”的课次拆成一遍/二遍；秋季规划全部显示在二遍。
+  const stagePlanCuts=planCuts(stu,grade,state.stage);
+  const pCuts=state.stage==='summer'?stagePlanCuts.filter(c=>c.round===1):[];
+  const pCuts2=stagePlanCuts.filter(c=>c.round===2);
   const actualLearnedSet=new Set(aCuts.learnedIdx||[]);
   const actualObservedSet=new Set(aCuts.observedIdx||[]);
   const actualIdx = aCuts.learnedIdx && aCuts.learnedIdx.length
     ? aCuts.learnedIdx[aCuts.learnedIdx.length-1] : -1;
-  const planIdx = pCuts.length? pCuts[pCuts.length-1].upto : -1;
-  document.getElementById('planHint').style.display = pCuts.length? 'none':'block';
+  document.getElementById('planHint').style.display = (pCuts.length||pCuts2.length)?'none':'block';
 
   if(!t.real.length){ body.innerHTML='<div class="empty-state">该年级知识树中没有"第X章"结构的章节</div>'; return; }
 
@@ -1453,18 +1472,13 @@ function renderProgress(stu, grade, inGrade){
   // 计划覆盖的知识点序号集合（用于识别计划外的节）
   let planIdxSet=null, planIdxSetFirst=null, planIdxSetSecond=null;
   if(tgt0){
-    planIdxSet=new Set(); planIdxSetFirst=new Set(); planIdxSetSecond=new Set();
-    for(const n of tgt0.set){
-      const i=t.byName.get(n); if(i===undefined) continue;
-      planIdxSet.add(i);
-      const ty=plans[stu]&&!Array.isArray(plans[stu])?plans[stu].types[n]:'';
-      if(ty==='必学') planIdxSetFirst.add(i);
-      else if(isCe(ty)) planIdxSetSecond.add(i);
-    }
+    planIdxSetFirst=pCuts.length?new Set(pCuts.flatMap(c=>c.idxs||[])):null;
+    planIdxSetSecond=pCuts2.length?new Set(pCuts2.flatMap(c=>c.idxs||[])):null;
+    planIdxSet=new Set([...(planIdxSetFirst||[]),...(planIdxSetSecond||[])]);
   }
   // 只有必学/测学会阻断连续进度；选学、不学、回顾等可被连续色块跨过。
   const requiredIdxSet=new Set();
-  const planObj=plans[stu];
+  const planObj=activePlan;
   if(planObj && !Array.isArray(planObj)){
     for(const [n,ty] of Object.entries(planObj.types)){
       if(ty!=='必学'&&!isCe(ty)) continue;
@@ -1519,7 +1533,7 @@ function renderProgress(stu, grade, inGrade){
   };
 
   const secSkippedBy = (s, planned, observed) => {
-    if(!planIdxSet) return false;
+    if(!planIdxSet||!planned) return false;
     for(let i=s.start;i<s.start+s.len;i++) if(observed.has(i)) return false;
     for(let i=s.start;i<s.start+s.len;i++) if(planned&&planned.has(i)) return false;
     return true;
@@ -1533,8 +1547,8 @@ function renderProgress(stu, grade, inGrade){
   const shortD = d => String(d).replace(/2\d{3}-/g,'').split('、')[0] + (String(d).includes('、')?'…':'');
   const paceHtmlByNo={};
   lastPaceInfo=null; avgLessonMin=0;
-  if(tgt0 && plans[stu] && !Array.isArray(plans[stu])){
-    const P=plans[stu];
+  if(tgt0 && activePlan && !Array.isArray(activePlan)){
+    const P=activePlan;
     {
       let tot=0;
       for(const [n,dd] of Object.entries(P.dur)) if(planCounted(P,n,t)) tot+=dd;
@@ -1586,9 +1600,9 @@ function renderProgress(stu, grade, inGrade){
       paceHtmlByNo[c.no]=`<span class="pace-badge ${slow?'slow':'fast'}" title="实际第${c.no}课按内容对应计划第${pk}课；计划内未完成 ${missing.length} 个、提前完成 ${ahead.length} 个，已排除历史已学/测学未出题 ${excludedKnown.size} 个，折算相差 ${mins}min">${slow?'慢':'快'} ${hrs}h</span>`;
     });
   }
-  const planTags = pCuts.filter(c=>c.upto>actualIdx);   // 已完成的进度不再显示计划课次
-  const secondActualIdx=secondModIdx.size?Math.max(...secondModIdx):-1;
-  const planTags2=pCuts2.filter(c=>c.upto>secondActualIdx);
+  // 计划课次数量严格取规划表，不因实际进度或内容回头而隐藏、合并。
+  const planTags=pCuts;
+  const planTags2=pCuts2;
 
   const paintJobs=[];
 
@@ -1600,8 +1614,8 @@ function renderProgress(stu, grade, inGrade){
   });
   const secEstH = s => {
     const ends = aCuts.filter(c=>c.upto>=s.start && c.upto<s.start+s.len).length
-               + planTags.filter(c=>c.upto>=s.start && c.upto<s.start+s.len).length
-               + planTags2.filter(c=>c.upto>=s.start && c.upto<s.start+s.len).length
+               + planTags.filter(c=>(c.anchor??c.upto)>=s.start && (c.anchor??c.upto)<s.start+s.len).length
+               + planTags2.filter(c=>(c.anchor??c.upto)>=s.start && (c.anchor??c.upto)<s.start+s.len).length
                + cuts2.filter(c=>(c.ranges||[]).some(r=>r.upto>=s.start && r.from<s.start+s.len)).length;
     return ends>1 ? 34+(ends-1)*24 : 34;
   };
@@ -1679,7 +1693,7 @@ function renderProgress(stu, grade, inGrade){
       } else if(tgt0){
         // 尚未开始的章节仍按规划类型提示未来安排。
       let ce=0, bi=0;
-      for(const [n,ty] of Object.entries(plans[stu].types||{})){
+      for(const [n,ty] of Object.entries(activePlan.types||{})){
         const i=t.byName.get(n);
         if(i!==undefined && i>=ch.start && i<ch.start+ch.len){ if(ty==='必学') bi++; else if(isCe(ty)) ce++; }
       }
@@ -1994,8 +2008,9 @@ function paintBar(bar, lcol, ch, labelEls, pCuts, pCuts2, aCuts, ppal, ppal2, ap
   // ---- 计划课次标签（不带日期，底边对齐计划分隔线） ----
   if(planTags){
     planTags.forEach((c,i)=>{
-      if(c.upto<ch.start || c.upto>chEnd) return;
-      const y2=yOf(Math.min(c.upto,chEnd),true);
+      const anchor=c.anchor??c.upto;
+      if(anchor<ch.start || anchor>chEnd) return;
+      const y2=yOf(anchor,true);
       if(y2==null) return;
       const line=document.createElement('div');
       line.className='lesson-line';
@@ -2006,8 +2021,9 @@ function paintBar(bar, lcol, ch, labelEls, pCuts, pCuts2, aCuts, ppal, ppal2, ap
   }
   if(planTags2&&lcol2){
     planTags2.forEach((c,i)=>{
-      if(c.upto<ch.start || c.upto>chEnd) return;
-      const y2=yOf2(Math.min(c.upto,chEnd),true);
+      const anchor=c.anchor??c.upto;
+      if(anchor<ch.start || anchor>chEnd) return;
+      const y2=yOf2(anchor,true);
       if(y2==null) return;
       const line=document.createElement('div');
       line.className='lesson-line'; line.style.top=y2+'px';
@@ -2239,7 +2255,7 @@ document.getElementById('filePlan').addEventListener('change',async e=>{
         scoreCol:col('目标分'), bandCol:col('分数段'), gradeCol:col('年级')}, get);
       if(!res.cnt) throw new Error('没有解析到暑期计划行（检查「阶段」列是否含"暑期"）');
       renderAll();
-      toast(`已导入暑期计划 ${res.cnt} 条，涉及 ${res.stuN} 名学生（必学=一遍规划，测学=二遍规划）`);
+      toast(`已导入暑期计划 ${res.cnt} 条，涉及 ${res.stuN} 名学生（测学和必学均计入暑假规划）`);
     } else {
       // 旧简版格式：学生名称 / 课次日期 / 计划学到
       const tgtCol=col('计划')||col('知识点')||col('题模')||col('章节');
