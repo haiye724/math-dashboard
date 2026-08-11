@@ -309,7 +309,7 @@ input[type=file]{display:none}
   border-radius:5px;overflow:hidden;align-self:stretch;
 }
 .vbar .fill-seg{position:absolute;left:0;right:0}
-.vbar .plan-seg{z-index:1;border-bottom:2px dashed #fff;box-sizing:border-box}
+.vbar .plan-seg,.vbar .second-plan-seg{z-index:1;border-bottom:2px dashed #fff;box-sizing:border-box}
 .vbar .act-seg{z-index:2;box-sizing:border-box}
 .vbar .act-divider{
   position:absolute;left:0;right:0;height:2px;z-index:3;
@@ -324,7 +324,7 @@ input[type=file]{display:none}
 .vbar .fail-mark svg{width:13px;height:11px;flex:none}
 .vbar .fail-mark b{font-size:11px;line-height:1;color:var(--fail);font-weight:700}
 
-.vbar .skip-seg{
+.vbar .skip-seg,.vbar .skip2-seg{
   z-index:3;
   background:repeating-linear-gradient(45deg,#D3D9DE 0 5px,#EEF1F3 5px 10px);
   border-top:1px solid #fff;border-bottom:1px solid #fff;box-sizing:border-box;
@@ -376,6 +376,7 @@ input[type=file]{display:none}
   background:#3E8E5A;border-bottom:2px solid #fff;
 }
 .lesson-tag.second-tag{background:#E6F2EA;color:#2F7048;border:1px solid #3E8E5A}
+.lesson-tag.second-plan-tag{background:#D8E9DE;color:#2F7048}
 .lesson-line{
   position:absolute;left:0;right:0;transform:translateY(-100%);
   display:flex;align-items:flex-end;gap:4px;flex-wrap:nowrap;padding-bottom:1px;
@@ -668,7 +669,7 @@ footer{margin-top:28px;font-size:11px;color:var(--ink-faint);text-align:center;l
       <tr><th>学生姓名</th><th>阶段</th><th>课次</th><th>上课日期</th><th>题模名称</th><th>学习时长(min)</th><th>类型</th></tr>
       <tr><td>黄子涵</td><td>☀️ 暑期</td><td>第1次课</td><td>2026-07-08</td><td>按边角将三角形分类</td><td>3</td><td>测学</td></tr>
     </table>
-    <p>目前只取「阶段」含<b>暑期</b>的行；课次即计划进度；类型中<b>测学=提升、必学=预习</b>（必学总数即进度情况的分母）；学习时长用于计算实际较计划快/慢多少分钟。多名学生可放在同一张表。</p>
+    <p>目前只取「阶段」含<b>暑期</b>的行；课次即计划进度；类型中<b>必学=一遍规划、测学（含测学(进度)）=二遍规划</b>；学习时长用于计算实际较计划快/慢多少分钟。多名学生可放在同一张表。</p>
     <div class="actions"><button class="btn primary" id="tplClose">知道了</button></div>
   </div>
 </div>
@@ -1293,12 +1294,13 @@ function lessonCuts(stu, inGrade, grade){
   cuts.fillRanges=fillRanges;
   return cuts;
 }
-function planCuts(stu, grade){
+function planCuts(stu, grade, pass='first'){
   const t=TREE[grade];
   const p=plans[stu];
   if(!p) return [];
   const cuts=[]; let far=-1;
-  if(Array.isArray(p)){                      // 旧格式：[{date, target}]
+  if(Array.isArray(p)){                      // 旧格式没有轮次字段，只作为一遍规划
+    if(pass==='second') return [];
     p.slice().sort((a,b)=>a.date<b.date?-1:1).forEach((pl,k)=>{
       let idx;
       if(t.byName.has(pl.target)) idx=t.byName.get(pl.target);
@@ -1318,6 +1320,9 @@ function planCuts(stu, grade){
   p.lessons.forEach(L=>{
     let adv=false;
     L.names.forEach(n=>{
+      const ty=p.types[n];
+      const matches=pass==='second' ? isCe(ty) : ty==='必学';
+      if(!matches || !planCounted(p,n,t)) return;
       const i=t.byName.get(n);
       if(i!==undefined && t.inReal(i) && i>far){ far=i; adv=true; }
     });
@@ -1423,7 +1428,8 @@ function renderProgress(stu, grade, inGrade){
     cuts2.forEach(c=>{ c.no=dayNo[c.date]||c.no; });
   }
 
-  const pCuts=planCuts(stu, grade);
+  const pCuts=planCuts(stu, grade, 'first');
+  const pCuts2=planCuts(stu, grade, 'second');
   const actualLearnedSet=new Set(aCuts.learnedIdx||[]);
   const actualObservedSet=new Set(aCuts.observedIdx||[]);
   const actualIdx = aCuts.learnedIdx && aCuts.learnedIdx.length
@@ -1435,6 +1441,7 @@ function renderProgress(stu, grade, inGrade){
 
   const PALETTE=['#1F4E79'];    // 实际：单色，课次以白色实线分格
   const PPAL=['#BFD3E6'];       // 计划：单色，课次以白色虚线分格
+  const P2PAL=['#C7DDCE'];      // 二遍计划：绿色浅色底
 
   // 列头：一遍学、二遍学使用各自独立的进度条，可按按钮单独或同时显示。
   const vh=document.createElement('div'); vh.className='vhead'+(mode==='both'?' mode-both':'');
@@ -1444,10 +1451,16 @@ function renderProgress(stu, grade, inGrade){
   body.appendChild(vh);
 
   // 计划覆盖的知识点序号集合（用于识别计划外的节）
-  let planIdxSet=null;
+  let planIdxSet=null, planIdxSetFirst=null, planIdxSetSecond=null;
   if(tgt0){
-    planIdxSet=new Set();
-    for(const n of tgt0.set){ const i=t.byName.get(n); if(i!==undefined) planIdxSet.add(i); }
+    planIdxSet=new Set(); planIdxSetFirst=new Set(); planIdxSetSecond=new Set();
+    for(const n of tgt0.set){
+      const i=t.byName.get(n); if(i===undefined) continue;
+      planIdxSet.add(i);
+      const ty=plans[stu]&&!Array.isArray(plans[stu])?plans[stu].types[n]:'';
+      if(ty==='必学') planIdxSetFirst.add(i);
+      else if(isCe(ty)) planIdxSetSecond.add(i);
+    }
   }
   // 只有必学/测学会阻断连续进度；选学、不学、回顾等可被连续色块跨过。
   const requiredIdxSet=new Set();
@@ -1460,6 +1473,7 @@ function renderProgress(stu, grade, inGrade){
     }
   }
   aCuts.requiredIdx=[...requiredIdxSet];
+  aCuts.requiredIdx2=planIdxSetSecond?[...planIdxSetSecond]:[];
   // 未过关统计：按节（用于章头合计）与按课次（用于进度格标注）
   const failBySec={};
   const failLC={};   // `${课次号}|${章start}` -> {n, idxs:[内容序号]}
@@ -1504,12 +1518,15 @@ function renderProgress(stu, grade, inGrade){
     return `<span class="fail-badge${hot?' hot':''}">未过关 ${n}</span>`;
   };
 
-  const secSkipped = s => {
+  const secSkippedBy = (s, planned, observed) => {
     if(!planIdxSet) return false;
-    for(let i=s.start;i<s.start+s.len;i++) if(actualObservedSet.has(i)) return false;
-    for(let i=s.start;i<s.start+s.len;i++) if(planIdxSet.has(i)) return false;
+    for(let i=s.start;i<s.start+s.len;i++) if(observed.has(i)) return false;
+    for(let i=s.start;i<s.start+s.len;i++) if(planned&&planned.has(i)) return false;
     return true;
   };
+  const secSkippedFirst=s=>secSkippedBy(s,planIdxSetFirst,actualObservedSet);
+  const secSkippedSecond=s=>secSkippedBy(s,planIdxSetSecond,secondModIdx);
+  const secSkippedAny=s=>secSkippedFirst(s)&&secSkippedSecond(s);
 
   // 课次快慢：先按内容找到实际课程第一次进入“计划第1课”的位置；
   // 此前的计划外学习不显示快慢，此后按课次偏移依次与计划课次比较。
@@ -1570,6 +1587,8 @@ function renderProgress(stu, grade, inGrade){
     });
   }
   const planTags = pCuts.filter(c=>c.upto>actualIdx);   // 已完成的进度不再显示计划课次
+  const secondActualIdx=secondModIdx.size?Math.max(...secondModIdx):-1;
+  const planTags2=pCuts2.filter(c=>c.upto>secondActualIdx);
 
   const paintJobs=[];
 
@@ -1582,6 +1601,7 @@ function renderProgress(stu, grade, inGrade){
   const secEstH = s => {
     const ends = aCuts.filter(c=>c.upto>=s.start && c.upto<s.start+s.len).length
                + planTags.filter(c=>c.upto>=s.start && c.upto<s.start+s.len).length
+               + planTags2.filter(c=>c.upto>=s.start && c.upto<s.start+s.len).length
                + cuts2.filter(c=>(c.ranges||[]).some(r=>r.upto>=s.start && r.from<s.start+s.len)).length;
     return ends>1 ? 34+(ends-1)*24 : 34;
   };
@@ -1706,7 +1726,7 @@ function renderProgress(stu, grade, inGrade){
       const lab=document.createElement('div');
       let cls='vsec-label';
       let flag='';
-      const skipped=secSkipped(s);
+      const skipped=secSkippedAny(s);
       const estH=secEstH(s);
       if(estH>34) lab.style.minHeight=estH+'px';
       if(actualIdx>end) cls+=' reached';
@@ -1725,8 +1745,8 @@ function renderProgress(stu, grade, inGrade){
 
   // 依据节名行的实际几何位置，把课次段画到连续进度条上（拆列后再绘制，保证几何正确）
   paintJobs.forEach(j=>{
-    paintBar(j.bar, j.lcol, j.ch, j.labelEls, pCuts, aCuts, PPAL, PALETTE, t, secSkipped, cntText, failLC, failMax, paceHtmlByNo, planTags, shortD, j.lcol2, cuts2, secondStartIdx, j.bar2);
-    if(mode==='first') j.bar.querySelectorAll('.act2-seg').forEach(el=>el.remove());
+    paintBar(j.bar, j.lcol, j.ch, j.labelEls, pCuts, pCuts2, aCuts, PPAL, P2PAL, PALETTE, t, secSkippedFirst, secSkippedSecond, cntText, failLC, failMax, paceHtmlByNo, planTags, planTags2, shortD, j.lcol2, cuts2, secondStartIdx, j.bar2);
+    if(mode==='first') j.bar.querySelectorAll('.act2-seg,.second-plan-seg,.skip2-seg').forEach(el=>el.remove());
     if(mode==='second') j.bar.querySelectorAll('.plan-seg,.act-seg,.act-divider,.fail-mark,.skip-seg').forEach(el=>el.remove());
   });
 }
@@ -1748,7 +1768,7 @@ function makeYMapper(bar, ch, labelEls){
   };
 }
 /* 一章的进度条：浅色计划打底；深色只覆盖真实学过的知识点，课次标签按当天内容定位 */
-function paintBar(bar, lcol, ch, labelEls, pCuts, aCuts, ppal, apal, t, secSkipped, cntTextRef, failLC, failMax, paceHtmlByNo, planTags, shortD, lcol2, cuts2, secondStartIdx, secondBar){
+function paintBar(bar, lcol, ch, labelEls, pCuts, pCuts2, aCuts, ppal, ppal2, apal, t, secSkipped, secSkipped2, cntTextRef, failLC, failMax, paceHtmlByNo, planTags, planTags2, shortD, lcol2, cuts2, secondStartIdx, secondBar){
   const MIN=22;
   lcol.innerHTML='';
   if(lcol2) lcol2.innerHTML='';
@@ -1776,6 +1796,27 @@ function paintBar(bar, lcol, ch, labelEls, pCuts, aCuts, ppal, apal, t, secSkipp
           seg.dataset.sub=`计划到：${t.rows[Math.min(c.upto,t.rows.length-1)].m}`;
           hookTip(seg);
           bar.appendChild(seg);
+        }
+      }
+      prevUp=Math.max(prevUp,c.upto);
+    });
+  }
+
+  // ---- 二遍计划（绿色浅色打底，绘制在二遍进度条） ----
+  {
+    let prevUp=-1;
+    pCuts2.forEach((c,i)=>{
+      const from=Math.max(prevUp+1,ch.start);
+      const to=Math.min(c.upto,chEnd);
+      if(to>=from){
+        const y1=yOf2(from,false), y2=yOf2(to,true);
+        if(y1!=null&&y2!=null&&y2>y1){
+          const seg=document.createElement('div'); seg.className='fill-seg second-plan-seg';
+          seg.style.top=y1+'px'; seg.style.height=(y2-y1)+'px';
+          seg.style.background=ppal2[0];
+          seg.dataset.tip=`二遍计划第${c.no||i+1}课｜${c.date}`;
+          seg.dataset.sub=`计划到：${t.rows[Math.min(c.upto,t.rows.length-1)].m}`;
+          hookTip(seg); greenBar.appendChild(seg);
         }
       }
       prevUp=Math.max(prevUp,c.upto);
@@ -1896,8 +1937,13 @@ function paintBar(bar, lcol, ch, labelEls, pCuts, aCuts, ppal, apal, t, secSkipp
 
   // ---- 二遍学层（绿色）：按章显示累计进度，绝不跨章 ----
   if(cuts2 && cuts2.length){
-    const required2=new Set(aCuts.requiredIdx||[]);
+    const required2=new Set(aCuts.requiredIdx2||[]);
     const chapterRequired=[...required2].filter(i=>i>=ch.start&&i<=chEnd);
+    const noFill2=new Set();
+    labelEls.forEach(({s})=>{
+      if(!secSkipped2(s)) return;
+      for(let i=s.start;i<s.start+s.len;i++) noFill2.add(i);
+    });
     const seenSecond=new Set();
     let prevFar2=ch.start-1;
     cuts2.forEach(c=>{
@@ -1911,15 +1957,22 @@ function paintBar(bar, lcol, ch, labelEls, pCuts, aCuts, ppal, apal, t, secSkipp
       let labelY=null;
       if(target>prevFar2){
         const from=prevFar2>=ch.start ? prevFar2+1 : ch.start;
-        const y1=yOf2(from,false), y2=yOf2(target,true);
-        if(y1!=null&&y2!=null){
-          const seg=document.createElement('div');
-          seg.className='act2-seg';
-          seg.style.top=y1+'px';
-          seg.style.height=Math.max(2,y2-y1)+'px';
-          seg.dataset.tip=`第${c.no}课（二遍）｜${c.date}`;
-          greenBar.appendChild(seg); hookTip(seg);
-          labelY=y2;
+        let runStart=null;
+        for(let i=from;i<=target+1;i++){
+          const blocked=i<=target&&noFill2.has(i);
+          if(i<=target&&!blocked&&runStart==null) runStart=i;
+          if(runStart!=null&&(i>target||blocked)){
+            const runEnd=i-1;
+            const y1=yOf2(runStart,false), y2=yOf2(runEnd,true);
+            if(y1!=null&&y2!=null){
+              const seg=document.createElement('div');
+              seg.className='act2-seg';
+              seg.style.top=y1+'px'; seg.style.height=Math.max(2,y2-y1)+'px';
+              seg.dataset.tip=`第${c.no}课（二遍）｜${c.date}`;
+              greenBar.appendChild(seg); hookTip(seg); labelY=y2;
+            }
+            runStart=null;
+          }
         }
         prevFar2=target;
       }else{
@@ -1951,6 +2004,17 @@ function paintBar(bar, lcol, ch, labelEls, pCuts, aCuts, ppal, apal, t, secSkipp
       lcol.appendChild(line);
     });
   }
+  if(planTags2&&lcol2){
+    planTags2.forEach((c,i)=>{
+      if(c.upto<ch.start || c.upto>chEnd) return;
+      const y2=yOf2(Math.min(c.upto,chEnd),true);
+      if(y2==null) return;
+      const line=document.createElement('div');
+      line.className='lesson-line'; line.style.top=y2+'px';
+      line.innerHTML=`<span class="lesson-tag second-plan-tag" title="${c.date}">计划第${c.no||i+1}课</span>`;
+      lcol2.appendChild(line);
+    });
+  }
 
   // ---- 计划外的节：灰色斜线遮罩；若被实际连续进度跨过，则保持实际色块连通 ----
   labelEls.forEach(({s})=>{
@@ -1965,6 +2029,17 @@ function paintBar(bar, lcol, ch, labelEls, pCuts, aCuts, ppal, apal, t, secSkipp
     seg.dataset.sub='不在计划范围内';
     hookTip(seg);
     bar.appendChild(seg);
+  });
+  // 二遍进度条使用二遍规划单独判断“不学”，与一遍斜线互不影响。
+  labelEls.forEach(({s})=>{
+    if(!secSkipped2(s)) return;
+    const y1=yOf2(s.start,false), y2=yOf2(s.start+s.len-1,true);
+    if(y1==null||y2==null) return;
+    const seg=document.createElement('div'); seg.className='fill-seg skip2-seg';
+    seg.style.top=y1+'px'; seg.style.height=(y2-y1)+'px';
+    seg.dataset.tip=s.name.replace(/☽/g,'');
+    seg.dataset.sub='不在二遍规划范围内';
+    hookTip(seg); greenBar.appendChild(seg);
   });
   // 标签去重叠：按锚点排序，重叠时向下让位（节高已按标签数加高，通常无需移动）
   if(lcol2){
@@ -2164,7 +2239,7 @@ document.getElementById('filePlan').addEventListener('change',async e=>{
         scoreCol:col('目标分'), bandCol:col('分数段'), gradeCol:col('年级')}, get);
       if(!res.cnt) throw new Error('没有解析到暑期计划行（检查「阶段」列是否含"暑期"）');
       renderAll();
-      toast(`已导入暑期计划 ${res.cnt} 条，涉及 ${res.stuN} 名学生（课次即计划进度，测学=提升、必学=预习）`);
+      toast(`已导入暑期计划 ${res.cnt} 条，涉及 ${res.stuN} 名学生（必学=一遍规划，测学=二遍规划）`);
     } else {
       // 旧简版格式：学生名称 / 课次日期 / 计划学到
       const tgtCol=col('计划')||col('知识点')||col('题模')||col('章节');
