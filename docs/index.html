@@ -1126,10 +1126,11 @@ function renderPaceStat(stu, grade){
     return i!==undefined && t0.inReal(i);
   }).flatMap(recordDays).filter(d=>d>=firstDate0)).size;
   const kDue=Math.min(attended, P.lessons.length);
+  let planPct=0;
   if(den && kDue>0){
     const seen=new Set();
     for(let k=0;k<kDue;k++) P.lessons[k].names.forEach(n=>{ if(planCounted(P,n,t0) && !priorSet.has(n)) seen.add(n); });
-    const planPct=Math.min(1, seen.size/den);
+    planPct=Math.min(1, seen.size/den);
     tick.style.display='';
     tick.setAttribute('transform', `rotate(${(planPct*360-270).toFixed(1)} 66 66)`);
     tick.dataset.pct=(planPct*100).toFixed(1);
@@ -1139,12 +1140,18 @@ function renderPaceStat(stu, grade){
     placeTickLabel(ptl, planPct);
   } else { tick.style.display='none'; document.getElementById('paceTickLabel').style.display='none'; }
 
-  // 状态：正常（慢<2h，快也算）/ 较慢（慢2~4h）/ 建议加课（慢>4h）
+  // 状态优先级：已完成 > 课次折算快慢 > 计划完成率差距。
+  // 快慢数据由 renderProgress 预先计算；若无法折算时长，仍用完成率差距兜底提醒。
   const ring=document.getElementById('ringPace');
   const ptb=document.getElementById('paceTitleBadge');
   const slowMin = (lastPaceInfo && lastPaceInfo.slow)? lastPaceInfo.mins : 0;
+  const progressGap=planPct-pct;
   ptb.style.display='';
-  if(slowMin>240){
+  if(rest===0 && den>0){
+    ring.style.stroke='var(--pass)';
+    ptb.className='title-badge ok';
+    ptb.textContent='已完成';
+  } else if(slowMin>240){
     ring.style.stroke='var(--fail)';
     const addN = avgLessonMin>0? Math.max(1, Math.ceil(slowMin/avgLessonMin)) : 0;
     ptb.className='title-badge bad';
@@ -1153,6 +1160,14 @@ function renderPaceStat(stu, grade){
     ring.style.stroke='#D9A21B';
     ptb.className='title-badge warn';
     ptb.textContent=`较慢 · 慢 ${(slowMin/60).toFixed(1)}h`;
+  } else if(progressGap>0.15){
+    ring.style.stroke='var(--fail)';
+    ptb.className='title-badge bad';
+    ptb.textContent='需关注';
+  } else if(progressGap>0.05){
+    ring.style.stroke='#D9A21B';
+    ptb.className='title-badge warn';
+    ptb.textContent='较慢';
   } else {
     ring.style.stroke='';
     ptb.className='title-badge neutral';
@@ -2340,11 +2355,13 @@ function renderAll(){
   document.getElementById('fallCards').style.display=summer?'none':'';
   if(summer){
     renderLearned(stu, grade, inGrade);
+    // 先生成进度条并计算当前学生的快慢，再据此渲染顶部进度状态。
+    renderProgress(stu, grade, inGrade);
     renderPaceStat(stu, grade);
   }else{
     renderFallCards(stu, grade);
+    renderProgress(stu, grade, inGrade);
   }
-  renderProgress(stu, grade, inGrade);
 }
 renderStudents();
 /* ===== 页面直传：把文件上传到共享仓库的 uploads/，由 Action 自动构建 ===== */
