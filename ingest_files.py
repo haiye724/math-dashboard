@@ -40,13 +40,16 @@ def parse_one(f):
     cur = full.drop_duplicates(subset=["学生名称","题模名称"], keep="last")
     if "学科" in cur.columns:
         cur = cur[cur["学科"].astype(str).str.contains("数学")]
-    study_cols = [c for c in ["新知学日期1","新知学日期2","巩固学日期1","巩固学日期2","巩固学日期3"] if c in cur.columns]
+    new_cols = [c for c in ["新知学日期1","新知学日期2"] if c in cur.columns]
+    reinforce_cols = [c for c in ["巩固学日期1","巩固学日期2","巩固学日期3"] if c in cur.columns]
     recs = []
     for _, r in cur.iterrows():
         stu, mod = str(r["学生名称"]).strip(), str(r["题模名称"]).strip()
         if not stu or not mod or stu == "nan":
             continue
-        study = {d for d in (nd(r.get(c)) for c in study_cols) if d}
+        new_days = {d for d in (nd(r.get(c)) for c in new_cols) if d}
+        reinforce_days = {d for d in (nd(r.get(c)) for c in reinforce_cols) if d}
+        explicit_study = new_days | reinforce_days
         ans_all, ans_ok = [], []
         for i in range(1, 8):
             d = nd(r.get(f"答题时间{i}"))
@@ -56,17 +59,24 @@ def parse_one(f):
             if not ce or ce in ("/", "nan"):
                 ans_ok.append(d)                      # 非消错作答（二遍学判定）
         # 前测日期：答对的计入（判会时点）；答错的仅当当天另有学习活动或再无其他日期时计入
-        base = study | set(ans_ok)
+        base = explicit_study | set(ans_ok)
         pre_d = nd(r.get("前测日期"))
         pre_ok = str(r.get("前测是否答对", "")).strip() == "答对"
+        test_days = set()
         if pre_d and (pre_ok or pre_d in base or not (base or ans_all)):
             base.add(pre_d)
-        study = sorted(base)
-        dt = max(ans_all) if ans_all else (max(study) if study else None)
+            test_days.add(pre_d)
+        # 用于区分一遍学习的性质：新知学=预习，巩固学/前测=提升。
+        # 非前测日的普通作答只作为有效活动，不擅自判断预习或提升。
+        normal_days = explicit_study | {d for d in ans_ok if d != pre_d}
+        acts = sorted(base)
+        dt = max(ans_all) if ans_all else (max(acts) if acts else None)
         recs.append({"n": stu, "m": mod,
                      "p": 1 if str(r["是否过关"]).strip() == "过关" else 0,
                      "dt": dt, "pre": str(r.get("前测是否答对", "/")).strip() or "/",
-                     "acts": study})
+                     "acts": acts, "studyActs": sorted(normal_days),
+                     "newActs": sorted(new_days), "reinforceActs": sorted(reinforce_days),
+                     "testActs": sorted(test_days)})
     if "学科" in full.columns:
         full = full[full["学科"].astype(str).str.contains("数学")]
     fl = {}
@@ -98,6 +108,9 @@ def build_records():
                 old_r = by_key[key]
                 keep = [d for d in (old_r["acts"] or ([old_r["dt"]] if old_r["dt"] else [])) if d < win]
                 r["acts"] = sorted(set(keep) | set(r["acts"]))
+                for field in ("studyActs", "newActs", "reinforceActs", "testActs"):
+                    old_days = [d for d in old_r.get(field, []) if d < win]
+                    r[field] = sorted(set(old_days) | set(r.get(field, [])))
                 if old_r["dt"] and (not r["dt"] or old_r["dt"] > r["dt"]):
                     r["dt"] = old_r["dt"]
                 if r["pre"] in ("", "/") and old_r.get("pre") not in ("", "/", None):
@@ -157,6 +170,25 @@ def main():
     os.makedirs("docs", exist_ok=True)
     with open(OUT, "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False, separators=(",", ":"))
+    # file:// 本地预览无法稳定 fetch data.json，因此同步更新 HTML 内嵌数据。
+    index_path = os.path.join("docs", "index.html")
+    if os.path.exists(index_path):
+        with open(index_path, "r", encoding="utf-8") as f:
+            html = f.read()
+        old_match = re.search(r'<script id="EMBED_DATA" type="application/json">(.*?)</script>', html, re.S)
+        old_payload = json.loads(old_match.group(1)) if old_match else {}
+        embedded_out = dict(out)
+        # 知识树只存于单文件网页中，更新学习数据时必须原样保留。
+        if old_payload.get("tree"):
+            embedded_out["tree"] = old_payload["tree"]
+        payload = json.dumps(embedded_out, ensure_ascii=False, separators=(",", ":"))
+        html, n = re.subn(r'(<script id="EMBED_DATA" type="application/json">).*?(</script>)',
+                          lambda m: m.group(1) + payload + m.group(2), html,
+                          count=1, flags=re.S)
+        if n != 1:
+            raise ValueError("docs/index.html 中未找到唯一的 EMBED_DATA")
+        with open(index_path, "w", encoding="utf-8") as f:
+            f.write(html)
     print(f"OK → {OUT}: 记录{len(recs)}条({out['exportStart']}→{dts[-1] if dts else '-'})，"
           f"暑期规划{len(plans)}人，秋季规划{len(plans_fall)}人")
 
