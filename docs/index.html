@@ -1211,7 +1211,7 @@ function lessonCuts(stu, inGrade, grade, firstDateOverride=null, endDate=null, p
   const firstDate=firstDateOverride||firstLessonDate(stu);
   // 一遍活动日期：优先用有效活动；无 acts 的旧数据退回 dt。
   // 课次从设置的第1次课日期开始；更早的有效学习仍全部用于历史填色。
-  const sp0=secondPassOf(stu, firstDate, grade);
+  const sp0=secondPassOf(stu, firstDate, grade, planOverride||plans[stu]);
   const firstDatesOf = r => {
     const days=recordDays(r);
     if(!Array.isArray(r.acts)) return days;
@@ -1352,16 +1352,32 @@ function planCuts(stu, grade, stage='summer'){
   });
   return cuts;
 }
-/* 二遍学按章节顺序判断：第1次课之前的全量学习先用于确定已经学过的章节和最远章节。
-   从设置日期开始，只有返回“以前确实学过”的更前章节，当天该章题模才归入二遍；
-   首次学习一个较前章节仍是一遍，不能因学习顺序跳跃而被误判。 */
-function secondPassOf(stu, startDate=firstLessonDate(stu), grade=detectGrade(stu)){
+/* 二遍学按“有效学过、离开后返回”判断：持续学习同一章始终属于当前遍次；
+   只有该章此前已完成至少20%的必学/测学、期间又学习了其他章节，之后重新回到该章，才进入二遍。
+   第1次课日期只控制哪些二遍日期显示课次，不能把首次学习的较前章节误判成二遍。 */
+const SECOND_PASS_MIN_REQUIRED_RATE=0.2;
+function secondPassOf(stu, startDate=firstLessonDate(stu), grade=detectGrade(stu), planOverride=null){
   const t=TREE[grade];
   const byMod={}; const dates=new Set();
   if(!t) return {byMod,dates:[]};
   const chapterNoByIdx=new Map();
   t.real.forEach((ch,no)=>{
     for(let i=ch.start;i<ch.start+ch.len;i++) chapterNoByIdx.set(i,no);
+  });
+  // 20%按当前阶段规划中本章的必学+测学计算；无规划时退回本章知识树全部题模。
+  const requiredByChapter=new Map(t.real.map((_ch,no)=>[no,new Set()]));
+  const P=planOverride||plans[stu];
+  if(P && !Array.isArray(P) && P.types){
+    for(const [name,type] of Object.entries(P.types)){
+      if(type!=='必学'&&!isCe(type)) continue;
+      const idx=t.byName.get(name), chapterNo=idx===undefined?undefined:chapterNoByIdx.get(idx);
+      if(chapterNo!==undefined) requiredByChapter.get(chapterNo).add(name);
+    }
+  }
+  t.real.forEach((ch,no)=>{
+    const required=requiredByChapter.get(no);
+    if(required.size) return;
+    for(let i=ch.start;i<ch.start+ch.len;i++) required.add(t.rows[i].m);
   });
   const byDate={};
   records.forEach(r=>{
@@ -1375,30 +1391,36 @@ function secondPassOf(stu, startDate=firstLessonDate(stu), grade=detectGrade(stu
       names.add(r.m); day.set(chapterNo,names);
     });
   });
-  let furthestChapter=-1;
   const learnedChapters=new Set();
+  const learnedRequiredByChapter=new Map(t.real.map((_ch,no)=>[no,new Set()]));
+  const passByChapter=new Map();
+  let previousChapters=new Set();
   Object.keys(byDate).sort().forEach(d=>{
     const day=byDate[d];
-    // 日期之前的数据只建立章节基线，不生成二遍记录；课次仍从设置日期开始。
-    if(d<startDate){
-      day.forEach((_names,chapterNo)=>{
-        furthestChapter=Math.max(furthestChapter,chapterNo);
-        learnedChapters.add(chapterNo);
-      });
-      return;
-    }
-    // 同一天跨章时只与此前日期比较，避免当天后章把当天前章误判为“返回”。
+    // 同一天跨章时只与上一个学习日比较，不让当天新进入的另一章制造“离开再返回”。
     day.forEach((names,chapterNo)=>{
-      if(chapterNo>=furthestChapter || !learnedChapters.has(chapterNo)) return;
-      names.forEach(n=>{
-        byMod[n]=[...new Set([...(byMod[n]||[]),d])].sort();
-        dates.add(d);
-      });
+      const continued=previousChapters.has(chapterNo);
+      const required=requiredByChapter.get(chapterNo);
+      const learnedRequired=learnedRequiredByChapter.get(chapterNo);
+      const learnedRate=required.size?learnedRequired.size/required.size:0;
+      const returned=!continued && learnedChapters.has(chapterNo) && previousChapters.size>0
+        && learnedRate>=SECOND_PASS_MIN_REQUIRED_RATE;
+      const second=returned || (continued && passByChapter.get(chapterNo)===2);
+      passByChapter.set(chapterNo,second?2:1);
+      if(d>=startDate && second){
+        names.forEach(n=>{
+          byMod[n]=[...new Set([...(byMod[n]||[]),d])].sort();
+          dates.add(d);
+        });
+      }
     });
-    day.forEach((_names,chapterNo)=>{
-      furthestChapter=Math.max(furthestChapter,chapterNo);
+    day.forEach((names,chapterNo)=>{
       learnedChapters.add(chapterNo);
+      const required=requiredByChapter.get(chapterNo);
+      const learnedRequired=learnedRequiredByChapter.get(chapterNo);
+      names.forEach(name=>{ if(required.has(name)) learnedRequired.add(name); });
     });
+    previousChapters=new Set(day.keys());
   });
   return {byMod, dates:[...dates].sort()};
 }
@@ -1463,7 +1485,7 @@ function renderProgress(stu, grade, inGrade){
 
   // —— 二遍学：课次切分（有效活动第二轮）——
   // 只要出现明确的再次学习，就展示二遍；不再要求整份暑期规划先全部学完。
-  const spRaw=secondPassOf(stu,stageStart,grade);
+  const spRaw=secondPassOf(stu,stageStart,grade,activePlan);
   const sp={byMod:{},dates:spRaw.dates.filter(d=>!stageEnd||d<stageEnd)};
   for(const [n,ds] of Object.entries(spRaw.byMod)){
     const idx=t.byName.get(n);
