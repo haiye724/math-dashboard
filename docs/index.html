@@ -386,6 +386,7 @@ input[type=file]{display:none}
   font-variant-numeric:tabular-nums;
 }
 .lesson-tag.actual-tag{background:var(--actual);color:#fff}
+.lesson-tag.history-tag{background:#607D98;color:#fff}
 .lesson-tag.plan-tag{background:var(--plan);color:var(--ink-deep)}
 @media (max-width:640px){
   .vhead,.vgrid{grid-template-columns:1fr 36px 92px;gap:0 8px}
@@ -931,7 +932,7 @@ function renderMeta(stu, grade, excluded){
     <span class="grade-badge">当前年级
       <select id="gradeSel">${GRADES.map(g=>`<option ${g===grade?'selected':''}>${g}</option>`).join('')}</select>
     </span>
-    <span class="course-start-note">${isFall?'秋季':''}第1次课：<b>${start}</b> · 更早数据不计入本阶段统计</span>`;
+    <span class="course-start-note">${isFall?'秋季':''}第1次课：<b>${start}</b> · 更早数据保留日期与填色，不计入本阶段统计</span>`;
   document.getElementById('gradeSel').onchange=e=>{
     state.gradeOverride[stu]=e.target.value; renderAll();
   };
@@ -1209,7 +1210,7 @@ function lessonCuts(stu, inGrade, grade, firstDateOverride=null, endDate=null, p
   const P=planOverride||plans[stu];
   const firstDate=firstDateOverride||firstLessonDate(stu);
   // 一遍活动日期：优先用有效活动；无 acts 的旧数据退回 dt。
-  // 课次从设置的第1次课日期开始；更早的有效学习只补齐本轮已经进入的章节。
+  // 课次从设置的第1次课日期开始；更早的有效学习仍全部用于历史填色。
   const sp0=secondPassOf(stu, firstDate, grade);
   const firstDatesOf = r => {
     const days=recordDays(r);
@@ -1273,27 +1274,14 @@ function lessonCuts(stu, inGrade, grade, firstDateOverride=null, endDate=null, p
     const from=ranges[0].from, upto=ranges[ranges.length-1].upto;
     dayInfo[d]={from, upto, ranges, idxs:kept, ignored};
   });
-  // 历史数据按当天、同章连续回填，但只限本轮已经进入的章节，不能把进度推到后面的新章节。
-  const currentMaxByChapter=new Map();
-  fillRanges.forEach(r=>{
-    const ch=t.real.find(x=>r.from>=x.start&&r.from<x.start+x.len);
-    if(ch) currentMaxByChapter.set(ch,Math.max(currentMaxByChapter.get(ch)??-1,r.upto));
-  });
-  // 如果设置日期当天已进入二遍，二遍触达的章节同样允许用更早记录补出蓝色一遍。
-  Object.keys(sp0.byMod||{}).forEach(n=>{
-    const idx=t.byName.get(n);
-    if(idx===undefined || !t.inReal(idx)) return;
-    const ch=t.real.find(x=>idx>=x.start&&idx<x.start+x.len);
-    if(ch) currentMaxByChapter.set(ch,Math.max(currentMaxByChapter.get(ch)??-1,idx));
-  });
+  // 第1次课日期只决定课次编号起点；此前的全量已学数据仍按当天、同章连续回填。
+  // 历史填色保留学习日期，但不生成课次编号，也不受日期之后是否再次进入该章节的限制。
   Object.entries(historyByDate).sort(([a],[b])=>a.localeCompare(b)).forEach(([d,set])=>{
     const raw=[...set].sort((a,b)=>a-b);
     raw.forEach(i=>observedIdx.add(i));
     t.real.forEach(ch=>{
-      const currentMax=currentMaxByChapter.get(ch);
-      if(currentMax===undefined) return;
       const chEnd=ch.start+ch.len-1;
-      const inCh=raw.filter(i=>i>=ch.start&&i<=chEnd&&i<=currentMax);
+      const inCh=raw.filter(i=>i>=ch.start&&i<=chEnd);
       if(!inCh.length) return;
       const from=inCh[0], upto=inCh[inCh.length-1];
       fillRanges.push({date:d, from, upto, historical:true});
@@ -1304,8 +1292,7 @@ function lessonCuts(stu, inGrade, grade, firstDateOverride=null, endDate=null, p
   (fullLearned[stu]||[]).forEach(n=>{
     if(datedNames.has(n)||recordedNames.has(n)||explicitActivityNames.has(n)) return;
     const idx=t.byName.get(n);
-    const ch=idx===undefined?null:t.real.find(x=>idx>=x.start&&idx<x.start+x.len);
-    if(idx!==undefined && t.inReal(idx) && ch && currentMaxByChapter.has(ch) && idx<=currentMaxByChapter.get(ch)){
+    if(idx!==undefined && t.inReal(idx)){
       learnedIdx.add(idx);
       observedIdx.add(idx);
       fillRanges.push({date:'', from:idx, upto:idx, historical:true});
@@ -1986,6 +1973,22 @@ function paintBar(bar, lcol, ch, labelEls, pCuts, pCuts2, aCuts, ppal, ppal2, ap
       line.className='lesson-line';
       line.style.top=y+'px';
       line.innerHTML=`<span class="lesson-tag actual-tag" title="${c.date}">第${c.no}课 ${shortD(c.date)}</span>${paceHtmlByNo[c.no]||''}`;
+      lcol.appendChild(line);
+    });
+    // 第1次课之前的学习仍标注日期，但不能占用或生成本阶段课次编号。
+    const historyDates=new Set();
+    (aCuts.fillRanges||[]).filter(r=>
+      r.historical && r.date && r.upto>=ch.start && r.from<=chEnd
+    ).forEach(r=>{
+      if(historyDates.has(r.date)) return;
+      historyDates.add(r.date);
+      const anchor=Math.min(r.upto,chEnd);
+      const y1=yOf(anchor,false), y2=yOf(anchor,true);
+      if(y1==null||y2==null) return;
+      const line=document.createElement('div');
+      line.className='lesson-line';
+      line.style.top=((y1+y2)/2)+'px';
+      line.innerHTML=`<span class="lesson-tag history-tag" title="${r.date}（第1次课之前）">${shortD(r.date)}</span>`;
       lcol.appendChild(line);
     });
     // 未过关标记：按（课次×本段内容）放置，各段之和 = 章合计
