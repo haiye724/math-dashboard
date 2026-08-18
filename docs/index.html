@@ -1352,8 +1352,8 @@ function planCuts(stu, grade, stage='summer'){
   });
   return cuts;
 }
-/* 二遍学按章节顺序判断：从学生设置的第1次课开始，记录已经到达的最远章节。
-   之后只要重新回到更前面的章节，当天该章学习的全部题模都归入二遍。 */
+/* 二遍学按章节顺序判断：第1次课之前的全量学习先用于确定已经到达的最远章节。
+   从设置日期开始，只要重新回到更前面的章节，当天该章学习的全部题模都归入二遍。 */
 function secondPassOf(stu, startDate=firstLessonDate(stu), grade=detectGrade(stu)){
   const t=TREE[grade];
   const byMod={}; const dates=new Set();
@@ -1368,7 +1368,7 @@ function secondPassOf(stu, startDate=firstLessonDate(stu), grade=detectGrade(stu
     const idx=t.byName.get(r.m);
     if(idx===undefined||!t.inReal(idx)) return;
     const chapterNo=chapterNoByIdx.get(idx);
-    recordDays(r).filter(d=>d>=startDate).forEach(d=>{
+    recordDays(r).forEach(d=>{
       const day=byDate[d]||(byDate[d]=new Map());
       const names=day.get(chapterNo)||new Set();
       names.add(r.m); day.set(chapterNo,names);
@@ -1377,6 +1377,11 @@ function secondPassOf(stu, startDate=firstLessonDate(stu), grade=detectGrade(stu
   let furthestChapter=-1;
   Object.keys(byDate).sort().forEach(d=>{
     const day=byDate[d];
+    // 日期之前的数据只建立章节基线，不生成二遍记录；课次仍从设置日期开始。
+    if(d<startDate){
+      day.forEach((_names,chapterNo)=>{ furthestChapter=Math.max(furthestChapter,chapterNo); });
+      return;
+    }
     // 同一天跨章时只与此前日期比较，避免当天后章把当天前章误判为“返回”。
     day.forEach((names,chapterNo)=>{
       if(chapterNo>=furthestChapter) return;
@@ -1664,10 +1669,14 @@ function renderProgress(stu, grade, inGrade){
     return false;
   });
   const secEstH = s => {
+    const historicalDates=new Set((aCuts.fillRanges||[])
+      .filter(r=>r.historical&&r.date&&r.upto>=s.start&&r.upto<s.start+s.len)
+      .map(r=>r.date));
     const ends = aCuts.filter(c=>c.upto>=s.start && c.upto<s.start+s.len).length
                + planTags.filter(c=>(c.anchor??c.upto)>=s.start && (c.anchor??c.upto)<s.start+s.len).length
                + planTags2.filter(c=>(c.anchor??c.upto)>=s.start && (c.anchor??c.upto)<s.start+s.len).length
-               + cuts2.filter(c=>(c.ranges||[]).some(r=>r.upto>=s.start && r.from<s.start+s.len)).length;
+               + cuts2.filter(c=>(c.ranges||[]).some(r=>r.upto>=s.start && r.from<s.start+s.len)).length
+               + historicalDates.size;
     return ends>1 ? 34+(ends-1)*24 : 34;
   };
   const CH_EXTRA = 64;   // 章头+间距估算
@@ -2137,6 +2146,11 @@ function paintBar(bar, lcol, ch, labelEls, pCuts, pCuts2, aCuts, ppal, ppal2, ap
       L.el.style.top=y+'px';
       last2=y;
     });
+    // 底部空间不足时整组上移，避免标签越过本章并遮住下一章标题。
+    const overflow2=last2-(lcol2.offsetHeight||0);
+    if(overflow2>0) lines2.forEach(L=>{
+      L.el.style.top=(parseFloat(L.el.style.top)-overflow2)+'px';
+    });
   }
   {
     const lines=[...lcol.querySelectorAll('.lesson-line')]
@@ -2148,6 +2162,10 @@ function paintBar(bar, lcol, ch, labelEls, pCuts, pCuts2, aCuts, ppal, ppal2, ap
       const y=Math.max(L.y, last+h+3);
       L.el.style.top=y+'px';
       last=y;
+    });
+    const overflow=last-(lcol.offsetHeight||0);
+    if(overflow>0) lines.forEach(L=>{
+      L.el.style.top=(parseFloat(L.el.style.top)-overflow)+'px';
     });
   }
 
