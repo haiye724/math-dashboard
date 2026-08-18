@@ -1352,8 +1352,9 @@ function planCuts(stu, grade, stage='summer'){
   });
   return cuts;
 }
-/* 二遍学按章节顺序判断：第1次课之前的全量学习先用于确定已经到达的最远章节。
-   从设置日期开始，只要重新回到更前面的章节，当天该章学习的全部题模都归入二遍。 */
+/* 二遍学按章节顺序判断：第1次课之前的全量学习先用于确定已经学过的章节和最远章节。
+   从设置日期开始，只有返回“以前确实学过”的更前章节，当天该章题模才归入二遍；
+   首次学习一个较前章节仍是一遍，不能因学习顺序跳跃而被误判。 */
 function secondPassOf(stu, startDate=firstLessonDate(stu), grade=detectGrade(stu)){
   const t=TREE[grade];
   const byMod={}; const dates=new Set();
@@ -1375,22 +1376,29 @@ function secondPassOf(stu, startDate=firstLessonDate(stu), grade=detectGrade(stu
     });
   });
   let furthestChapter=-1;
+  const learnedChapters=new Set();
   Object.keys(byDate).sort().forEach(d=>{
     const day=byDate[d];
     // 日期之前的数据只建立章节基线，不生成二遍记录；课次仍从设置日期开始。
     if(d<startDate){
-      day.forEach((_names,chapterNo)=>{ furthestChapter=Math.max(furthestChapter,chapterNo); });
+      day.forEach((_names,chapterNo)=>{
+        furthestChapter=Math.max(furthestChapter,chapterNo);
+        learnedChapters.add(chapterNo);
+      });
       return;
     }
     // 同一天跨章时只与此前日期比较，避免当天后章把当天前章误判为“返回”。
     day.forEach((names,chapterNo)=>{
-      if(chapterNo>=furthestChapter) return;
+      if(chapterNo>=furthestChapter || !learnedChapters.has(chapterNo)) return;
       names.forEach(n=>{
         byMod[n]=[...new Set([...(byMod[n]||[]),d])].sort();
         dates.add(d);
       });
     });
-    day.forEach((_names,chapterNo)=>{ furthestChapter=Math.max(furthestChapter,chapterNo); });
+    day.forEach((_names,chapterNo)=>{
+      furthestChapter=Math.max(furthestChapter,chapterNo);
+      learnedChapters.add(chapterNo);
+    });
   });
   return {byMod, dates:[...dates].sort()};
 }
