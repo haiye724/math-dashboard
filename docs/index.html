@@ -1365,52 +1365,40 @@ function planCuts(stu, grade, stage='summer'){
   });
   return cuts;
 }
-/* 二遍学检测：先逐题模识别“间隔超过4天后的再次学习”。
-   再按“当天×章节”判断主要轮次：若重复题模多于首次题模，当天该章全部学习归入二遍。 */
-const SECOND_GAP_DAYS = 4;
+/* 二遍学按章节顺序判断：从学生设置的第1次课开始，记录已经到达的最远章节。
+   之后只要重新回到更前面的章节，当天该章学习的全部题模都归入二遍。 */
 function secondPassOf(stu, startDate=firstLessonDate(stu), grade=detectGrade(stu)){
   const t=TREE[grade];
   const byMod={}; const dates=new Set();
-  records.forEach(r=>{
-    if(r.n!==stu || !r.acts || r.acts.length<2) return;
-    const idx=t&&t.byName.get(r.m);
-    if(idx===undefined || !t.inReal(idx)) return;
-    // 要保留设置日期之前的一遍记录，才能识别“此前预习、从第1次课开始提升”。
-    const acts=[...new Set(r.acts)].sort();
-    let secondAt=-1;
-    for(let i=1;i<acts.length;i++){
-      const d1=new Date(acts[i-1]), d2=new Date(acts[i]);
-      if(acts[i]>=startDate && (d2-d1)/86400000 > SECOND_GAP_DAYS){
-        secondAt=i;
-        break;
-      }
-    }
-    if(secondAt<0) return;
-    const sec=acts.slice(secondAt).filter(d=>d>=startDate);
-    byMod[r.m]=[...new Set(sec)].sort();
-    byMod[r.m].forEach(d=>dates.add(d));
+  if(!t) return {byMod,dates:[]};
+  const chapterNoByIdx=new Map();
+  t.real.forEach((ch,no)=>{
+    for(let i=ch.start;i<ch.start+ch.len;i++) chapterNoByIdx.set(i,no);
   });
-  // 同一章同一天以多数题模决定本次学习轮次。
-  // 例如重复学习3模、首次学习2模，则5模都归入二遍；不跨章影响其他内容。
-  const dayChapter={};
+  const byDate={};
   records.forEach(r=>{
     if(r.n!==stu) return;
-    const idx=t&&t.byName.get(r.m);
+    const idx=t.byName.get(r.m);
     if(idx===undefined||!t.inReal(idx)) return;
-    const ch=t.real.find(x=>idx>=x.start&&idx<x.start+x.len);
-    if(!ch) return;
-    const sec=new Set(byMod[r.m]||[]);
+    const chapterNo=chapterNoByIdx.get(idx);
     recordDays(r).filter(d=>d>=startDate).forEach(d=>{
-      const x=dayChapter[`${d}|${ch.start}`]||(dayChapter[`${d}|${ch.start}`]={date:d,first:new Set(),second:new Set()});
-      (sec.has(d)?x.second:x.first).add(r.m);
+      const day=byDate[d]||(byDate[d]=new Map());
+      const names=day.get(chapterNo)||new Set();
+      names.add(r.m); day.set(chapterNo,names);
     });
   });
-  Object.values(dayChapter).forEach(x=>{
-    if(!x.second.size||x.second.size<=x.first.size) return;
-    x.first.forEach(n=>{
-      byMod[n]=[...new Set([...(byMod[n]||[]),x.date])].sort();
-      dates.add(x.date);
+  let furthestChapter=-1;
+  Object.keys(byDate).sort().forEach(d=>{
+    const day=byDate[d];
+    // 同一天跨章时只与此前日期比较，避免当天后章把当天前章误判为“返回”。
+    day.forEach((names,chapterNo)=>{
+      if(chapterNo>=furthestChapter) return;
+      names.forEach(n=>{
+        byMod[n]=[...new Set([...(byMod[n]||[]),d])].sort();
+        dates.add(d);
+      });
     });
+    day.forEach((_names,chapterNo)=>{ furthestChapter=Math.max(furthestChapter,chapterNo); });
   });
   return {byMod, dates:[...dates].sort()};
 }
@@ -1524,7 +1512,6 @@ function renderProgress(stu, grade, inGrade){
   const pCuts=state.stage==='summer'?stagePlanCuts.filter(c=>c.round===1):[];
   const pCuts2=stagePlanCuts.filter(c=>c.round===2);
   const actualLearnedSet=new Set(aCuts.learnedIdx||[]);
-  const actualObservedSet=new Set(aCuts.observedIdx||[]);
   const actualIdx = aCuts.learnedIdx && aCuts.learnedIdx.length
     ? aCuts.learnedIdx[aCuts.learnedIdx.length-1] : -1;
   document.getElementById('planHint').style.display = (pCuts.length||pCuts2.length)?'none':'block';
@@ -1605,14 +1592,15 @@ function renderProgress(stu, grade, inGrade){
     return `<span class="fail-badge${hot?' hot':''}">未过关 ${n}</span>`;
   };
 
-  const secSkippedBy = (s, planned, observed) => {
+  // “不学”只按当前轮次的规划判断：专题内没有任何规划题模，就画灰色斜线。
+  // 历史/另一轮的学习记录不能取消斜线；本轮确有实际深色填色时再由 paintBar 覆盖。
+  const secSkippedBy = (s, planned) => {
     if(!planIdxSet||!planned) return false;
-    for(let i=s.start;i<s.start+s.len;i++) if(observed.has(i)) return false;
-    for(let i=s.start;i<s.start+s.len;i++) if(planned&&planned.has(i)) return false;
+    for(let i=s.start;i<s.start+s.len;i++) if(planned.has(i)) return false;
     return true;
   };
-  const secSkippedFirst=s=>secSkippedBy(s,planIdxSetFirst,actualObservedSet);
-  const secSkippedSecond=s=>secSkippedBy(s,planIdxSetSecond,secondModIdx);
+  const secSkippedFirst=s=>secSkippedBy(s,planIdxSetFirst);
+  const secSkippedSecond=s=>secSkippedBy(s,planIdxSetSecond);
   const secSkippedAny=s=>secSkippedFirst(s)&&secSkippedSecond(s);
 
   // 课次快慢：先按内容找到实际课程第一次进入“计划第1课”的位置；
