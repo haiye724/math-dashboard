@@ -621,7 +621,7 @@ footer{margin-top:28px;font-size:11px;color:var(--ink-faint);text-align:center;l
     </div>
     <div class="card">
       <h2 class="big-title">进度情况<span class="title-badge" id="paceTitleBadgeF" style="display:none"></span></h2>
-      <div class="desc" id="paceDescF">已学知识点数量 / 本期计划知识点总数（测学与必学统一计入，并扣除暑假实际已学）</div>
+      <div class="desc" id="paceDescF">已学知识点数量 / 本期实际要学知识点总数（测学与必学统一计入，并扣除秋季第1次课前已学）</div>
       <div class="rate-flex">
         <div class="ring-wrap">
           <svg viewBox="0 0 132 132" width="132" height="132">
@@ -796,8 +796,8 @@ function currentDays(stu){
 }
 /* 单张全量表按每个学生的第1次课日期拆成“本期已学”和“历史已学”。
    acts=[] 表示只有消错题，两边都不计；仅对旧数据中没有记录明细的 fullLearned 保留兼容。 */
-function studySets(stu){
-  const start=firstLessonDate(stu);
+function studySets(stu, startOverride=null){
+  const start=startOverride||firstLessonDate(stu);
   const current=new Set(), prior=new Set(), recordNames=new Set();
   records.forEach(r=>{
     if(r.n!==stu) return;
@@ -1053,14 +1053,10 @@ function renderFallCards(stu, grade){
   document.getElementById('learnedTotalF').textContent=total;
   document.getElementById('learnedPassF').textContent=pass;
   document.getElementById('learnedFailF').textContent=fail;
-  // 秋季进度分母是“秋季计划剩余任务”：从秋季计划中扣除该生暑假阶段实际学过的内容。
-  const summerStart=firstLessonDate(stu);
-  const summerLearned=new Set();
-  records.forEach(r=>{
-    if(r.n!==stu || !fallSet.has(r.m)) return;
-    if(recordDays(r).some(d=>d>=summerStart && d<fallStart)) summerLearned.add(r.m);
-  });
-  const fallProgressSet=new Set([...fallSet].filter(n=>!summerLearned.has(n)));
+  // 秋季进度分母是“秋季实际剩余任务”：从秋季规划中扣除秋季第1次课前的全部已学，
+  // 包括暑假及暑假之前的历史学习；只有消错题的记录仍不算已学。
+  const {prior:preFallLearned}=studySets(stu,fallStart);
+  const fallProgressSet=new Set([...fallSet].filter(n=>!preFallLearned.has(n)));
   const progressLearnedMods=new Set([...learnedMods].filter(n=>fallProgressSet.has(n)));
   const den=fallProgressSet.size, num=progressLearnedMods.size;
   const pct2= den? num/den : 0;
@@ -1637,25 +1633,36 @@ function renderProgress(stu, grade, inGrade){
       for(const [n,dd] of Object.entries(P.dur)) if(planCounted(P,n,t)) tot+=dd;
       avgLessonMin = P.lessons.length? tot/P.lessons.length : 0;
     }
-    const firstPlanNames=new Set((P.lessons[0]?.names||[]).filter(n=>planCounted(P,n,t)));
+    const {prior:pacePriorSet}=studySets(stu,stageStart);
+    const historicalPlanNames=new Set([...pacePriorSet].filter(n=>
+      Object.prototype.hasOwnProperty.call(P.dur,n) && planCounted(P,n,t)
+    ));
+    // 若前几节计划已在开课前完成，从第一节尚未完成的计划课开始匹配实际课次。
+    const alignPlanIndex=Math.max(0,P.lessons.findIndex(L=>
+      (L.names||[]).some(n=>planCounted(P,n,t)&&!historicalPlanNames.has(n))
+    ));
+    const alignPlanNames=new Set((P.lessons[alignPlanIndex]?.names||[]).filter(n=>planCounted(P,n,t)));
     const alignAt=aCuts.findIndex(c=>{
       const names=(c.idxs||[]).map(i=>t.rows[i]&&t.rows[i].m).filter(Boolean);
       if(!names.length) return false;
-      const matched=names.filter(n=>firstPlanNames.has(n)).length;
-      // 计划第1课可能被拆到相邻两次实际课中，或同日提前进入下一课；四成内容对上即可开始匹配。
+      const matched=names.filter(n=>alignPlanNames.has(n)).length;
+      // 对应计划课可能被拆到相邻两次实际课中，或同日提前进入下一课；四成内容对上即可开始匹配。
       return matched/names.length>=0.4;
     });
     // 对齐后按计划课次累计对比，不再用知识树上的位置区间估算时长。
     // 这样计划中偶尔穿插的远位置知识点，不会把中间整段课程误算为落后。
-    // 快慢口径与进度统计一致：开课前已学、已到课但未出题的测学不算欠账；二遍学习计入实际完成。
-    const {current:paceCurrentSet, prior:pacePriorSet}=studySets(stu);
+    // 开课前已经完成的规划内容计入实际完成；若属于后续计划课，就按规划时长体现为提前。
+    // 已到课但未出题的测学仍不算欠账；二遍学习同样计入实际完成。
     const pacePlanLesson={};
     P.lessons.forEach((L,k)=>L.names.forEach(n=>{ if(!(n in pacePlanLesson)) pacePlanLesson[n]=k+1; }));
     const expectedNames=new Set();
-    const actualPlanNames=new Set();
+    P.lessons.slice(0,alignPlanIndex).forEach(L=>(L.names||[]).forEach(n=>{
+      if(planCounted(P,n,t)) expectedNames.add(n);
+    }));
+    const actualPlanNames=new Set(historicalPlanNames);
     aCuts.forEach((c,ci)=>{
       if(alignAt<0 || ci<alignAt){ paceHtmlByNo[c.no]=''; return; }
-      const pk=ci-alignAt+1;
+      const pk=alignPlanIndex+ci-alignAt+1;
       if(pk>P.lessons.length){ paceHtmlByNo[c.no]=''; return; }
       (P.lessons[pk-1]?.names||[]).forEach(n=>{ if(planCounted(P,n,t)) expectedNames.add(n); });
       (c.idxs||[]).forEach(i=>{
@@ -1667,8 +1674,7 @@ function renderProgress(stu, grade, inGrade){
         if(planCounted(P,n,t) && days.some(d=>d<=c.date)) actualPlanNames.add(n);
       }
       const excludedKnown=new Set([...expectedNames].filter(n=>
-        !paceCurrentSet.has(n) &&
-        (pacePriorSet.has(n) || (isCe(P.types[n]) && (pacePlanLesson[n]||1)<=pk))
+        !actualPlanNames.has(n) && isCe(P.types[n]) && (pacePlanLesson[n]||1)<=pk
       ));
       const effectiveExpected=new Set([...expectedNames].filter(n=>!excludedKnown.has(n)));
       const missing=[...effectiveExpected].filter(n=>!actualPlanNames.has(n));
@@ -1680,15 +1686,19 @@ function renderProgress(stu, grade, inGrade){
       lastPaceInfo={slow, mins};
       if(mins<3){ paceHtmlByNo[c.no]=''; return; }
       const hrs=(mins/60).toFixed(1);
-      paceHtmlByNo[c.no]=`<span class="pace-badge ${slow?'slow':'fast'}" title="实际第${c.no}课按内容对应计划第${pk}课；计划内未完成 ${missing.length} 个、提前完成 ${ahead.length} 个，已排除历史已学/测学未出题 ${excludedKnown.size} 个，折算相差 ${mins}min">${slow?'慢':'快'} ${hrs}h</span>`;
+      const historicalAhead=ahead.filter(n=>historicalPlanNames.has(n)).length;
+      paceHtmlByNo[c.no]=`<span class="pace-badge ${slow?'slow':'fast'}" title="实际第${c.no}课按内容对应计划第${pk}课；计划内未完成 ${missing.length} 个、提前完成 ${ahead.length} 个（其中开课前已完成 ${historicalAhead} 个），已排除测学未出题 ${excludedKnown.size} 个，折算相差 ${mins}min">${slow?'慢':'快'} ${hrs}h</span>`;
     });
   }
-  // 计划课次数量严格取规划表；已经被对应轮次实际进度覆盖的课次不再显示标签。
-  // 一遍、二遍分别判断，避免一遍进度误隐藏二遍计划（反之亦然）。
-  const firstDoneTo=actualIdx;
-  const secondDoneTo=secondModIdx.size?Math.max(...secondModIdx):-1;
-  const planTags=pCuts.filter(c=>(c.upto??c.anchor??-1)>firstDoneTo);
-  const planTags2=pCuts2.filter(c=>(c.upto??c.anchor??-1)>secondDoneTo);
+  // 计划课次数量严格取规划表；只有该课规划题模逐项完成后才隐藏标签。
+  // 不能再用“最远学到的位置”推断完成，否则跳学后面的章节会误隐藏中间计划课。
+  const firstObserved=new Set(aCuts.observedIdx||[]);
+  const planCutDone=(c,doneSet)=>{
+    const idxs=(c.idxs||[]).filter(i=>i!==undefined&&t.inReal(i));
+    return idxs.length>0 && idxs.every(i=>doneSet.has(i));
+  };
+  const planTags=pCuts.filter(c=>!planCutDone(c,firstObserved));
+  const planTags2=pCuts2.filter(c=>!planCutDone(c,secondModIdx));
 
   const paintJobs=[];
 
