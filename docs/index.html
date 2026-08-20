@@ -1621,8 +1621,8 @@ function renderProgress(stu, grade, inGrade){
   const secSkippedSecond=s=>secSkippedBy(s,planIdxSetSecond);
   const secSkippedAny=s=>secSkippedFirst(s)&&secSkippedSecond(s);
 
-  // 课次快慢：先按内容找到实际课程第一次进入“计划第1课”的位置；
-  // 此前的计划外学习不显示快慢，此后按课次偏移依次与计划课次比较。
+  // 课次快慢：同一阶段内严格按课次编号比较，实际第N课固定对应计划第N课。
+  // 一遍、二遍共用实际课次编号并统一参与计算；开课前已学计入实际完成，但不推进课次编号。
   const shortD = d => String(d).replace(/2\d{3}-/g,'').split('、')[0] + (String(d).includes('、')?'…':'');
   const paceHtmlByNo={};
   lastPaceInfo=null; avgLessonMin=0;
@@ -1637,42 +1637,45 @@ function renderProgress(stu, grade, inGrade){
     const historicalPlanNames=new Set([...pacePriorSet].filter(n=>
       Object.prototype.hasOwnProperty.call(P.dur,n) && planCounted(P,n,t)
     ));
-    // 若前几节计划已在开课前完成，从第一节尚未完成的计划课开始匹配实际课次。
-    const alignPlanIndex=Math.max(0,P.lessons.findIndex(L=>
-      (L.names||[]).some(n=>planCounted(P,n,t)&&!historicalPlanNames.has(n))
-    ));
-    const alignPlanNames=new Set((P.lessons[alignPlanIndex]?.names||[]).filter(n=>planCounted(P,n,t)));
-    const alignAt=aCuts.findIndex(c=>{
-      const names=(c.idxs||[]).map(i=>t.rows[i]&&t.rows[i].m).filter(Boolean);
-      if(!names.length) return false;
-      const matched=names.filter(n=>alignPlanNames.has(n)).length;
-      // 对应计划课可能被拆到相邻两次实际课中，或同日提前进入下一课；四成内容对上即可开始匹配。
-      return matched/names.length>=0.4;
+    // 同一天可能同时含一遍与二遍内容；合并后只作为一节实际课计算一次。
+    const paceCutsByNo=new Map();
+    [...aCuts,...cuts2].forEach(c=>{
+      let x=paceCutsByNo.get(c.no);
+      if(!x){ x={no:c.no,date:c.date,idxs:new Set()}; paceCutsByNo.set(c.no,x); }
+      (c.idxs||[]).forEach(i=>x.idxs.add(i));
     });
-    // 对齐后按计划课次累计对比，不再用知识树上的位置区间估算时长。
-    // 这样计划中偶尔穿插的远位置知识点，不会把中间整段课程误算为落后。
-    // 开课前已经完成的规划内容计入实际完成；若属于后续计划课，就按规划时长体现为提前。
-    // 已到课但未出题的测学仍不算欠账；二遍学习同样计入实际完成。
+    const paceCuts=[...paceCutsByNo.values()].sort((a,b)=>a.no-b.no);
+    // 截至实际第N课，累计比较计划第1～N课；已到课但未出题的测学仍不算欠账。
     const pacePlanLesson={};
     P.lessons.forEach((L,k)=>L.names.forEach(n=>{ if(!(n in pacePlanLesson)) pacePlanLesson[n]=k+1; }));
     const expectedNames=new Set();
-    P.lessons.slice(0,alignPlanIndex).forEach(L=>(L.names||[]).forEach(n=>{
-      if(planCounted(P,n,t)) expectedNames.add(n);
-    }));
     const actualPlanNames=new Set(historicalPlanNames);
-    aCuts.forEach((c,ci)=>{
-      if(alignAt<0 || ci<alignAt){ paceHtmlByNo[c.no]=''; return; }
-      const pk=alignPlanIndex+ci-alignAt+1;
+    const historicalCoveredPlanNames=new Set(historicalPlanNames);
+    const addCoveredRange=(range, historical=false)=>{
+      for(let i=range.from;i<=range.upto;i++){
+        const n=t.rows[i]&&t.rows[i].m;
+        if(!n||!planCounted(P,n,t)) continue;
+        actualPlanNames.add(n);
+        if(historical) historicalCoveredPlanNames.add(n);
+      }
+    };
+    // 与进度条填色口径一致：第1次课之前已经连续覆盖的规划区域也视为已完成。
+    (aCuts.fillRanges||[]).filter(r=>r.historical).forEach(r=>addCoveredRange(r,true));
+    let expectedThrough=0;
+    paceCuts.forEach(c=>{
+      const pk=c.no;
       if(pk>P.lessons.length){ paceHtmlByNo[c.no]=''; return; }
-      (P.lessons[pk-1]?.names||[]).forEach(n=>{ if(planCounted(P,n,t)) expectedNames.add(n); });
-      (c.idxs||[]).forEach(i=>{
+      while(expectedThrough<pk){
+        (P.lessons[expectedThrough]?.names||[]).forEach(n=>{ if(planCounted(P,n,t)) expectedNames.add(n); });
+        expectedThrough++;
+      }
+      c.idxs.forEach(i=>{
         const n=t.rows[i]&&t.rows[i].m;
         if(n&&planCounted(P,n,t)) actualPlanNames.add(n);
       });
-      // 二遍活动从同一模再次学习的日期起计入；只累计到当前课日期，避免未来学习倒灌到早期课次。
-      for(const [n,days] of Object.entries(sp.byMod||{})){
-        if(planCounted(P,n,t) && days.some(d=>d<=c.date)) actualPlanNames.add(n);
-      }
+      // 当天一遍与二遍的连续填色区域均计入已完成，不能只认有单独记录的题模。
+      (aCuts.fillRanges||[]).filter(r=>!r.historical&&r.date===c.date).forEach(r=>addCoveredRange(r));
+      cuts2.filter(x=>x.date===c.date).forEach(x=>(x.ranges||[]).forEach(r=>addCoveredRange(r)));
       const excludedKnown=new Set([...expectedNames].filter(n=>
         !actualPlanNames.has(n) && isCe(P.types[n]) && (pacePlanLesson[n]||1)<=pk
       ));
@@ -1684,21 +1687,29 @@ function renderProgress(stu, grade, inGrade){
       const delta=Math.round(missingMin-aheadMin);
       const slow=delta>0, mins=Math.abs(delta);
       lastPaceInfo={slow, mins};
-      if(mins<3){ paceHtmlByNo[c.no]=''; return; }
+      if(mins<12){ paceHtmlByNo[c.no]=''; return; }
       const hrs=(mins/60).toFixed(1);
-      const historicalAhead=ahead.filter(n=>historicalPlanNames.has(n)).length;
-      paceHtmlByNo[c.no]=`<span class="pace-badge ${slow?'slow':'fast'}" title="实际第${c.no}课按内容对应计划第${pk}课；计划内未完成 ${missing.length} 个、提前完成 ${ahead.length} 个（其中开课前已完成 ${historicalAhead} 个），已排除测学未出题 ${excludedKnown.size} 个，折算相差 ${mins}min">${slow?'慢':'快'} ${hrs}h</span>`;
+      const historicalAhead=ahead.filter(n=>historicalCoveredPlanNames.has(n)).length;
+      paceHtmlByNo[c.no]=`<span class="pace-badge ${slow?'slow':'fast'}" title="实际第${c.no}课固定对应计划第${pk}课；计划内未完成 ${missing.length} 个、提前完成 ${ahead.length} 个（其中开课前已完成 ${historicalAhead} 个），已排除测学未出题 ${excludedKnown.size} 个，折算相差 ${mins}min">${slow?'慢':'快'} ${hrs}h</span>`;
     });
   }
-  // 计划课次数量严格取规划表；只有该课规划题模逐项完成后才隐藏标签。
-  // 不能再用“最远学到的位置”推断完成，否则跳学后面的章节会误隐藏中间计划课。
-  const firstObserved=new Set(aCuts.observedIdx||[]);
+  // 计划课次数量严格取规划表；该课的规划区域已被对应进度条连续覆盖后隐藏标签。
+  const firstCovered=new Set(actualLearnedSet);
+  const secondCovered=new Set(secondModIdx);
+  cuts2.forEach(c=>(c.ranges||[]).forEach(r=>{
+    for(let i=r.from;i<=r.upto;i++) if(t.inReal(i)) secondCovered.add(i);
+  }));
+  // 秋季实际任务已扣除开课前已学，相应的二遍计划标签也不再重复显示。
+  if(state.stage==='fall'){
+    const {prior}=studySets(stu,stageStart);
+    prior.forEach(n=>{ const i=t.byName.get(n); if(i!==undefined&&t.inReal(i)) secondCovered.add(i); });
+  }
   const planCutDone=(c,doneSet)=>{
     const idxs=(c.idxs||[]).filter(i=>i!==undefined&&t.inReal(i));
     return idxs.length>0 && idxs.every(i=>doneSet.has(i));
   };
-  const planTags=pCuts.filter(c=>!planCutDone(c,firstObserved));
-  const planTags2=pCuts2.filter(c=>!planCutDone(c,secondModIdx));
+  const planTags=pCuts.filter(c=>!planCutDone(c,firstCovered));
+  const planTags2=pCuts2.filter(c=>!planCutDone(c,secondCovered));
 
   const paintJobs=[];
 
@@ -2116,7 +2127,7 @@ function paintBar(bar, lcol, ch, labelEls, pCuts, pCuts2, aCuts, ppal, ppal2, ap
         const line=document.createElement('div');
         line.className='lesson-line';
         line.style.top=labelY+'px';
-        line.innerHTML=`<span class="lesson-tag second-tag" title="${c.date}（二遍）">第${c.no}课 ${shortD(c.date)}</span>`;
+        line.innerHTML=`<span class="lesson-tag second-tag" title="${c.date}（二遍）">第${c.no}课 ${shortD(c.date)}</span>${paceHtmlByNo[c.no]||''}`;
         lcol2.appendChild(line);
       }
     });
