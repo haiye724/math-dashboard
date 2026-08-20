@@ -1006,14 +1006,10 @@ function summerRestOf(stu, grade){
   if(!P) return 0;
   const t=TREE[grade];
   const {current:curSet, prior:priorLearnedSet}=studySets(stu);
-  const n2l={};
-  P.lessons.forEach(L=>L.names.forEach(n=>{ if(!(n in n2l)) n2l[n]=L.no; }));
-  const attended=new Set(currentDays(stu)).size;
-  const dueK=Math.min(attended, P.lessons.length);
   let rest=0;
   for(const n of Object.keys(P.dur)){
     if(!planCounted(P,n,t)) continue;
-    if(!curSet.has(n) && (priorLearnedSet.has(n) || (isCe(P.types[n]) && (n2l[n]||1)<=dueK))) continue;  // 开课前已学/已到课的测学未出题
+    if(!curSet.has(n)&&priorLearnedSet.has(n)) continue; // 仅扣除开课前确实学过的内容
     if(!curSet.has(n)) rest++;
   }
   return rest;
@@ -1105,14 +1101,9 @@ function renderPaceStat(stu, grade){
   descEl.textContent='已学知识点数量 / 本期计划知识点总数';
   const P=plans[stu];
   const {current:curSet, prior:priorLearnedSet}=studySets(stu);
-  // 排期与已上课次（用于判断测学是否"已到课仍未出题"）
-  const n2lP={};
-  P.lessons.forEach(L=>L.names.forEach(n=>{ if(!(n in n2lP)) n2lP[n]=L.no; }));
-  const attendedP=new Set(currentDays(stu)).size;
-  const dueK=Math.min(attendedP, P.lessons.length);
-  // 剔除"本来就会、不占本期任务"的知识点：开课前已学（全量有当次无）
-  // + 测学未出题且排期课次已到（自适应前测判定已会）；未来课次的测学保留为未学
-  const priorSet=new Set([...tgt.set].filter(n=> !curSet.has(n) && (priorLearnedSet.has(n) || (isCe(P.types[n]) && (n2lP[n]||1)<=dueK))));
+  // 只剔除开课前确实学过的知识点。测学也是本期必学任务：即使当次没有出题，
+  // 也不能自动判定为“已经会了”，否则会把实际落后错误显示成提前。
+  const priorSet=new Set([...tgt.set].filter(n=>!curSet.has(n)&&priorLearnedSet.has(n)));
   let den=0, rest=0;
   for(const n of tgt.set){
     if(priorSet.has(n)) continue;
@@ -1431,10 +1422,15 @@ function firstPassNature(r, secondDays, planType, endDate=null){
   const test=new Set(recordTestDays(r));
   let previewN=0, liftN=0;
   firstDays.forEach(d=>{
-    if(preview.has(d)) previewN++;   // 同日有新知学时，首次学习按预习
-    else if(reinforce.has(d)||test.has(d)) liftN++;
+    // 同一天可能既有新知学也有巩固学/测学，两种来源都要计数，不能让新知学覆盖测学。
+    if(preview.has(d)) previewN++;
+    if(reinforce.has(d)||test.has(d)) liftN++;
   });
-  if(previewN||liftN) return liftN>previewN?'lift':'preview';
+  if(previewN||liftN){
+    if(liftN!==previewN) return liftN>previewN?'lift':'preview';
+    // 数量持平时按该题模的规划属性裁决：测学=提升，必学=预习。
+    return isCe(planType)?'lift':'preview';
+  }
   return isCe(planType)?'lift':'preview';
 }
 
@@ -1525,10 +1521,26 @@ function renderProgress(stu, grade, inGrade){
     cuts2.forEach(c=>{ c.no=dayNo[c.date]||c.no; });
   }
 
-  // 暑假规划按“大幅回头”的课次拆成一遍/二遍；秋季规划全部显示在二遍。
+  // 暑假规划先按“大幅回头”的内容拆遍次；如果实际已经进入二遍，
+  // 则从实际二遍开始的课次起，后续同编号计划也转入二遍进度条。
+  // 这样一遍已经完成、实际第 N 课开始回头复习时，计划第 N 课不会继续留在一遍栏。
   const stagePlanCuts=planCuts(stu,grade,state.stage);
-  const pCuts=state.stage==='summer'?stagePlanCuts.filter(c=>c.round===1):[];
-  const pCuts2=stagePlanCuts.filter(c=>c.round===2);
+  const actualSecondStartNo=cuts2.length?Math.min(...cuts2.map(c=>c.no)):Infinity;
+  const effectivePlanRound=c=>{
+    if(state.stage==='fall'||c.round===2) return 2;
+    return Number(c.no)>=actualSecondStartNo?2:1;
+  };
+  const normalizePlanLane=cuts=>{
+    let far=-1;
+    return cuts.map(c=>{
+      const anchor=c.anchor??c.upto;
+      far=Math.max(far,anchor);
+      return {...c,upto:far};
+    });
+  };
+  const pCuts=state.stage==='summer'
+    ? normalizePlanLane(stagePlanCuts.filter(c=>effectivePlanRound(c)===1)) : [];
+  const pCuts2=normalizePlanLane(stagePlanCuts.filter(c=>effectivePlanRound(c)===2));
   const actualLearnedSet=new Set(aCuts.learnedIdx||[]);
   const actualIdx = aCuts.learnedIdx && aCuts.learnedIdx.length
     ? aCuts.learnedIdx[aCuts.learnedIdx.length-1] : -1;
@@ -1645,9 +1657,7 @@ function renderProgress(stu, grade, inGrade){
       (c.idxs||[]).forEach(i=>x.idxs.add(i));
     });
     const paceCuts=[...paceCutsByNo.values()].sort((a,b)=>a.no-b.no);
-    // 截至实际第N课，累计比较计划第1～N课；已到课但未出题的测学仍不算欠账。
-    const pacePlanLesson={};
-    P.lessons.forEach((L,k)=>L.names.forEach(n=>{ if(!(n in pacePlanLesson)) pacePlanLesson[n]=k+1; }));
+    // 截至实际第N课，累计比较计划第1～N课；测学与必学统一计入应完成内容。
     const expectedNames=new Set();
     const actualPlanNames=new Set(historicalPlanNames);
     const historicalCoveredPlanNames=new Set(historicalPlanNames);
@@ -1676,10 +1686,7 @@ function renderProgress(stu, grade, inGrade){
       // 当天一遍与二遍的连续填色区域均计入已完成，不能只认有单独记录的题模。
       (aCuts.fillRanges||[]).filter(r=>!r.historical&&r.date===c.date).forEach(r=>addCoveredRange(r));
       cuts2.filter(x=>x.date===c.date).forEach(x=>(x.ranges||[]).forEach(r=>addCoveredRange(r)));
-      const excludedKnown=new Set([...expectedNames].filter(n=>
-        !actualPlanNames.has(n) && isCe(P.types[n]) && (pacePlanLesson[n]||1)<=pk
-      ));
-      const effectiveExpected=new Set([...expectedNames].filter(n=>!excludedKnown.has(n)));
+      const effectiveExpected=expectedNames;
       const missing=[...effectiveExpected].filter(n=>!actualPlanNames.has(n));
       const ahead=[...actualPlanNames].filter(n=>!effectiveExpected.has(n));
       const missingMin=missing.reduce((sum,n)=>sum+(Number(P.dur[n])||0),0);
@@ -1690,7 +1697,7 @@ function renderProgress(stu, grade, inGrade){
       if(mins<12){ paceHtmlByNo[c.no]=''; return; }
       const hrs=(mins/60).toFixed(1);
       const historicalAhead=ahead.filter(n=>historicalCoveredPlanNames.has(n)).length;
-      paceHtmlByNo[c.no]=`<span class="pace-badge ${slow?'slow':'fast'}" title="实际第${c.no}课固定对应计划第${pk}课；计划内未完成 ${missing.length} 个、提前完成 ${ahead.length} 个（其中开课前已完成 ${historicalAhead} 个），已排除测学未出题 ${excludedKnown.size} 个，折算相差 ${mins}min">${slow?'慢':'快'} ${hrs}h</span>`;
+      paceHtmlByNo[c.no]=`<span class="pace-badge ${slow?'slow':'fast'}" title="实际第${c.no}课固定对应计划第${pk}课；计划内未完成 ${missing.length} 个、提前完成 ${ahead.length} 个（其中开课前已完成 ${historicalAhead} 个）；测学与必学统一计入，折算相差 ${mins}min">${slow?'慢':'快'} ${hrs}h</span>`;
     });
   }
   // 计划课次数量严格取规划表；该课的规划区域已被对应进度条连续覆盖后隐藏标签。
