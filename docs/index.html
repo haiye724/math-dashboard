@@ -306,7 +306,7 @@ input[type=file]{display:none}
 .vhead.mode-both,.vgrid.mode-both{grid-template-columns:1fr 46px 128px 46px 108px}
 .vbar{
   position:relative;background:#F1F4F6;border:1px solid var(--line);
-  border-radius:5px;overflow:hidden;align-self:stretch;
+  border-radius:5px;overflow:visible;align-self:stretch;
 }
 .vbar .fill-seg{position:absolute;left:0;right:0}
 .vbar .plan-seg,.vbar .second-plan-seg{z-index:1;border-bottom:2px dashed #fff;box-sizing:border-box}
@@ -317,9 +317,9 @@ input[type=file]{display:none}
   background:#fff;transform:translateY(-1px);pointer-events:none;
 }
 .vbar .position-marker{
-  position:absolute;left:-1px;right:-1px;height:5px;z-index:6;
-  background:var(--accent);border-radius:3px;
-  box-shadow:0 1px 3px rgba(75,48,15,.4);pointer-events:none;
+  position:absolute;left:-5px;right:-5px;height:2px;z-index:6;
+  background:var(--accent);border-radius:1px;
+  box-shadow:0 1px 1px rgba(75,48,15,.25);pointer-events:none;
   transform:translateY(-50%);
 }
 .vbar .fail-mark{
@@ -1975,12 +1975,15 @@ function paintBar(bar, lcol, ch, labelEls, pCuts, pCuts2, aCuts, ppal, ppal2, ap
   const chEnd=ch.start+ch.len-1;
   let actualPaintRanges=[];
 
-  // ---- 计划（浅色打底，虚线分格） ----
+  // ---- 尚未到课的计划（浅色打底，虚线分格） ----
+  // 已到课的计划色块必须退出，只保留实际深色填色；未来计划按本课真实题模范围绘制，
+  // 色块底边与“计划第N课”标签使用同一个末题模位置，不能越过标签继续填色。
   {
-    let prevUp=-1;
-    pCuts.forEach((c,i)=>{
-      const from=Math.max(prevUp+1, ch.start);
-      const to=Math.min(c.upto, chEnd);
+    (planTags||[]).forEach((c,i)=>{
+      const idxs=(c.idxs||[]).filter(x=>x>=ch.start&&x<=chEnd).sort((a,b)=>a-b);
+      if(!idxs.length) return;
+      const from=idxs[0];
+      const to=idxs[idxs.length-1];
       if(to>=from){
         const y1=yOf(from,false), y2=yOf(to,true);
         if(y1!=null&&y2!=null&&y2>y1){
@@ -1993,16 +1996,16 @@ function paintBar(bar, lcol, ch, labelEls, pCuts, pCuts2, aCuts, ppal, ppal2, ap
           bar.appendChild(seg);
         }
       }
-      prevUp=Math.max(prevUp,c.upto);
     });
   }
 
-  // ---- 二遍计划（绿色浅色打底，绘制在二遍进度条） ----
+  // ---- 尚未到课的二遍计划（绿色浅色打底，绘制在二遍进度条） ----
   {
-    let prevUp=-1;
-    pCuts2.forEach((c,i)=>{
-      const from=Math.max(prevUp+1,ch.start);
-      const to=Math.min(c.upto,chEnd);
+    (planTags2||[]).forEach((c,i)=>{
+      const idxs=(c.idxs||[]).filter(x=>x>=ch.start&&x<=chEnd).sort((a,b)=>a-b);
+      if(!idxs.length) return;
+      const from=idxs[0];
+      const to=idxs[idxs.length-1];
       if(to>=from){
         const y1=yOf2(from,false), y2=yOf2(to,true);
         if(y1!=null&&y2!=null&&y2>y1){
@@ -2014,7 +2017,6 @@ function paintBar(bar, lcol, ch, labelEls, pCuts, pCuts2, aCuts, ppal, ppal2, ap
           hookTip(seg); greenBar.appendChild(seg);
         }
       }
-      prevUp=Math.max(prevUp,c.upto);
     });
   }
 
@@ -2031,18 +2033,9 @@ function paintBar(bar, lcol, ch, labelEls, pCuts, pCuts2, aCuts, ppal, ppal2, ap
       .filter(r=>r.upto>=ch.start&&r.from<=chEnd)
       .map(r=>({from:Math.max(r.from,ch.start),to:Math.min(r.upto,chEnd)}))
       .sort((a,b)=>a.from-b.from||a.to-b.to);
-    // 当天首尾内容形成的原始区间也可能跨过整段“不学”；先把这些位置从色块中切掉。
-    const rawRanges=[];
-    sourceRanges.forEach(r=>{
-      let from=null;
-      for(let i=r.from;i<=r.to;i++){
-        if(noFill.has(i)){
-          if(from!=null) rawRanges.push({from,to:i-1});
-          from=null;
-        }else if(from==null) from=i;
-      }
-      if(from!=null) rawRanges.push({from,to:r.to});
-    });
+    // 实际学过的内容始终优先显示。即使该节后来被规划分到另一遍或标为“不学”，
+    // 只要本遍确有实际学习记录，就不能用斜线把真实进度切掉。
+    const rawRanges=sourceRanges.map(r=>({...r}));
     rawRanges.sort((a,b)=>a.from-b.from||a.to-b.to);
     // 相邻两段只有在中间既无遗漏必学/测学、也无“不学”专题时才连接。
     rawRanges.forEach(r=>{
@@ -2074,16 +2067,8 @@ function paintBar(bar, lcol, ch, labelEls, pCuts, pCuts2, aCuts, ppal, ppal2, ap
     const courseRanges=[];
     aCuts.forEach(c=>{
       (c.ranges||[]).filter(r=>r.upto>=ch.start&&r.from<=chEnd).forEach(r=>{
-        const from0=Math.max(r.from,ch.start), to0=Math.min(r.upto,chEnd);
-        let from=null;
-        for(let i=from0;i<=to0+1;i++){
-          const blocked=i<=to0&&noFill.has(i);
-          if(i<=to0&&!blocked&&from==null) from=i;
-          if(from!=null&&(i>to0||blocked)){
-            courseRanges.push({no:c.no,date:c.date,from,to:i-1});
-            from=null;
-          }
-        }
+        const from=Math.max(r.from,ch.start), to=Math.min(r.upto,chEnd);
+        courseRanges.push({no:c.no,date:c.date,from,to});
       });
     });
     courseRanges.forEach((r,i)=>{
@@ -2299,9 +2284,17 @@ function paintBar(bar, lcol, ch, labelEls, pCuts, pCuts2, aCuts, ppal, ppal2, ap
       if(y!=null){
         const marker=document.createElement('div');
         marker.className='position-marker';
-        marker.style.top=Math.max(2,Math.min(host.clientHeight-2,y))+'px';
+        const markerY=Math.max(2,Math.min(host.clientHeight-2,y));
+        marker.style.top=markerY+'px';
         marker.title=`当前学习位置｜第${pm.no}课 ${pm.date}`;
         host.appendChild(marker);
+        // 未过关数量标签与最新位置线处于同一高度时，让标签上下错开，保持横线完整可见。
+        host.querySelectorAll('.fail-mark').forEach(dot=>{
+          const dotY=parseFloat(dot.style.top);
+          if(!Number.isFinite(dotY)||Math.abs(dotY-markerY)>=12) return;
+          const offset=markerY>=18?-13:13;
+          dot.style.top=Math.max(9,Math.min(host.clientHeight-9,dotY+offset))+'px';
+        });
       }
     }
   }
@@ -2313,7 +2306,7 @@ function paintBar(bar, lcol, ch, labelEls, pCuts, pCuts2, aCuts, ppal, ppal2, ap
     let last2=-1e9;
     lines2.forEach(L=>{
       const h=L.el.offsetHeight||18;
-      const y=Math.max(L.y, last2+h+3);
+      const y=Math.max(L.y, h+3, last2+h+3);
       L.el.style.top=y+'px';
       last2=y;
     });
@@ -2330,7 +2323,7 @@ function paintBar(bar, lcol, ch, labelEls, pCuts, pCuts2, aCuts, ppal, ppal2, ap
     let last=-1e9;
     lines.forEach(L=>{
       const h=L.el.offsetHeight||18;
-      const y=Math.max(L.y, last+h+3);
+      const y=Math.max(L.y, h+3, last+h+3);
       L.el.style.top=y+'px';
       last=y;
     });
