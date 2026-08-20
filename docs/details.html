@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>学生学习明细</title>
+<style>
+:root{--paper:#f7f8f5;--card:#fff;--ink:#22364a;--deep:#16354f;--mid:#60778d;--line:#dce5eb;--grid:#e9eff3;--blue:#1f4e79;--green:#2e7d66;--red:#c25546;--pale:#edf3f7}
+*{box-sizing:border-box} body{margin:0;color:var(--ink);font:14px/1.55 "PingFang SC","Microsoft YaHei",sans-serif;background:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px),var(--paper);background-size:28px 28px}
+.wrap{max-width:1380px;margin:auto;padding:26px 24px 56px}.top{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:18px}.top h1{font:700 25px/1.2 "Songti SC","SimSun",serif;letter-spacing:2px;color:var(--deep);margin:0}.top .sub{color:var(--mid);font-size:12px}.back{margin-left:auto;color:var(--blue);text-decoration:none;border:1px solid var(--line);background:#fff;border-radius:8px;padding:7px 13px}
+.controls,.panel{background:var(--card);border:1px solid var(--line);border-radius:11px}.controls{padding:14px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px}.controls label{font-size:12px;color:var(--mid)}select,input{font:inherit;color:var(--ink);background:#fff;border:1px solid var(--line);border-radius:7px;padding:7px 10px}select{min-width:150px}.search{min-width:230px;flex:1;max-width:380px}.seg{display:flex;gap:6px}.seg button,.tabs button{font:inherit;border:1px solid var(--line);background:#fff;color:var(--mid);border-radius:7px;padding:7px 13px;cursor:pointer}.seg button.on,.tabs button.on{background:var(--deep);border-color:var(--deep);color:#fff}.sync{margin-left:auto;font-size:12px;color:#8ba0b3}
+.export{font:inherit;border:1px solid var(--blue);background:var(--blue);color:#fff;border-radius:7px;padding:7px 15px;cursor:pointer;font-weight:600}.export:disabled{opacity:.45;cursor:not-allowed}
+.summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:16px}.stat{background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px 16px}.stat .k{font-size:12px;color:var(--mid)}.stat .v{font-size:25px;font-weight:700;color:var(--deep);margin-top:2px}.stat.learned .v{color:var(--green)}.stat.unlearned .v{color:var(--red)}
+.panel{overflow:hidden}.tabs{display:flex;gap:8px;padding:14px 16px 10px;border-bottom:1px solid var(--line)}.table-wrap{overflow:auto;max-height:calc(100vh - 330px);min-height:300px}table{border-collapse:separate;border-spacing:0;width:100%;min-width:980px}th,td{text-align:left;padding:9px 11px;border-bottom:1px solid var(--grid);vertical-align:top}th{position:sticky;top:0;z-index:2;background:var(--pale);font-size:12px;color:var(--mid);white-space:nowrap}td.module{font-weight:600;color:#2c65a0;min-width:300px}.pass{color:var(--green);font-weight:700}.fail{color:var(--red);font-weight:700}.empty{text-align:center;color:#8ca0b3;padding:70px 20px}.loading{padding:80px;text-align:center;color:var(--mid)}
+@media(max-width:700px){.wrap{padding:16px 10px 40px}.top h1{font-size:21px}.back{margin-left:0}.summary{grid-template-columns:1fr 1fr}.summary .stat:first-child{grid-column:1/-1}.sync{width:100%;margin:0}.table-wrap{max-height:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top"><div><h1>学生学习明细</h1><div class="sub">已学记录与规划内未学题模</div></div><a class="back" id="back" href="index.html">返回学习看板</a></div>
+  <div class="controls">
+    <label for="student">学生</label><select id="student"></select>
+    <label>统计阶段</label><div class="seg"><button id="summer" class="on">暑假</button><button id="fall">秋季</button></div>
+    <input class="search" id="search" placeholder="搜索题模、章节或专题…">
+    <button class="export" id="export" type="button">导出暑假</button>
+    <span class="sync" id="sync"></span>
+  </div>
+  <div class="summary">
+    <div class="stat"><div class="k">当前学生</div><div class="v" id="studentName">—</div></div>
+    <div class="stat learned"><div class="k">已学题模</div><div class="v" id="learnedCount">—</div></div>
+    <div class="stat unlearned"><div class="k">规划内未学</div><div class="v" id="unlearnedCount">—</div></div>
+  </div>
+  <div class="panel">
+    <div class="tabs"><button id="tabLearned" class="on">已学</button><button id="tabUnlearned">未学</button></div>
+    <div class="table-wrap" id="content"><div class="loading">正在读取学习数据…</div></div>
+  </div>
+</div>
+<script>
+'use strict';
+const SKIP=new Set(['暑期总复习','选学','错题回顾','回顾块','章节限时测','模拟考']);
+const STAT_HEADERS=[
+  '学生名称','学生等级','规划等级','学科','题模名称','题模难度','前测是否答对','前测日期',
+  '新知学正确率1','新知学结果1','新知学日期1','新知学正确率2','新知学结果2','新知学日期2',
+  '新知学正确率3','新知学结果3','新知学日期3','巩固学正确率1','巩固学结果1','巩固学日期1',
+  '巩固学正确率2','巩固学结果2','巩固学日期2','巩固学正确率3','巩固学结果3','巩固学日期3',
+  '消错题结果1','答题时间1','消错题结果2','答题时间2','消错题结果3','答题时间3',
+  '消错题结果4','答题时间4','消错题结果5','答题时间5','是否过关','试卷答对题数',
+  '试卷答错次数','外部试卷过关','外部过关来源','最近试卷名称'
+];
+let DATA=null,TREES={},state={student:'',stage:'summer',tab:'learned',search:''};
+const $=id=>document.getElementById(id), esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function days(r){return (Array.isArray(r.acts)?r.acts:(r.dt?[r.dt]:[])).filter(Boolean)}
+function param(){return new URL(location.href).searchParams}
+function savedDate(key,stu){try{return (JSON.parse(localStorage.getItem(key)||'{}')||{})[stu]||''}catch(e){return ''}}
+function firstDate(stu){return savedDate('mathDashboardFirstLessonDatesV1',stu)||DATA.plans?.[stu]?.lessons?.[0]?.date||DATA.exportStart||'2026-07-01'}
+function fallDate(stu){return savedDate('mathDashboardFallFirstLessonDatesV1',stu)||DATA.plansFall?.[stu]?.lessons?.[0]?.date||firstDate(stu)}
+function makeTrees(){for(const g of ['初一','初二','初三']){const rows=DATA.tree?.[g]||[],byName=new Map();rows.forEach(r=>{if(!byName.has(r.m))byName.set(r.m,r.o)});const real=[];let c=null;rows.forEach(r=>{if(!c||c.name!==r.c){c={name:r.c,start:r.o,len:0};if(/^第[0-9〇零一二三四五六七八九十百]+章/.test(String(r.c).trim()))real.push(c)}c.len++});TREES[g]={rows,byName,inReal:i=>real.some(c=>i>=c.start&&i<c.start+c.len)}}}
+function gradeOf(stu){const p=DATA.plans?.[stu]||DATA.plansFall?.[stu],cnt={};for(const n of Object.keys(p?.dur||{}))for(const g of Object.keys(TREES))if(TREES[g].byName.has(n))cnt[g]=(cnt[g]||0)+1;return Object.keys(TREES).sort((a,b)=>(cnt[b]||0)-(cnt[a]||0))[0]||'初一'}
+function planCounted(P,n,t){return !SKIP.has(P?.types?.[n])&&t.byName.has(n)}
+function studySets(stu,start){const current=new Set(),prior=new Set(),names=new Set();for(const r of DATA.records||[]){if(r.n!==stu)continue;names.add(r.m);const ds=days(r);if(ds.some(d=>d>=start))current.add(r.m);if(ds.some(d=>d<start))prior.add(r.m)}for(const n of DATA.fullLearned?.[stu]||[])if(!names.has(n))prior.add(n);return{current,prior}}
+function rowPlace(t,name){const i=t.byName.get(name),r=i===undefined?{}:t.rows[i]||{};return{idx:i??99999,chapter:String(r.c||'').replace(/☽/g,''),section:String(r.s||'').replace(/☽/g,'')}}
+function compute(){const stu=state.student,grade=gradeOf(stu),t=TREES[grade],start=state.stage==='fall'?fallDate(stu):firstDate(stu),end=state.stage==='summer'&&DATA.plansFall?.[stu]?fallDate(stu):null,inStage=d=>d&&d>=start&&(!end||d<end);const learned=[];for(const r of DATA.records||[]){if(r.n!==stu)continue;const ds=days(r).filter(inStage).sort();if(!ds.length)continue;const p=rowPlace(t,r.m);learned.push({...p,module:r.m,pass:!!r.p,pre:r.pre||'',dates:ds.join('、'),sort:ds[0],record:r})}learned.sort((a,b)=>a.sort.localeCompare(b.sort)||a.idx-b.idx);
+  const P=state.stage==='fall'?DATA.plansFall?.[stu]:DATA.plans?.[stu],unlearned=[];if(P){const {current,prior}=studySets(stu,start),lm=new Map();(P.lessons||[]).forEach((L,i)=>(L.names||[]).forEach(n=>{const a=lm.get(n)||[];a.push({no:Number(L.no)||i+1,date:L.date||''});lm.set(n,a)}));for(const n of Object.keys(P.dur||{})){if(!planCounted(P,n,t)||current.has(n)||prior.has(n))continue;const p=rowPlace(t,n),ls=lm.get(n)||[];unlearned.push({...p,module:n,type:P.types[n]||'',dur:Number(P.dur[n])||0,lesson:ls.map(x=>`第${x.no}课`).join('、'),date:[...new Set(ls.map(x=>x.date).filter(Boolean))].join('、'),sort:ls[0]?.no||9999})}unlearned.sort((a,b)=>a.sort-b.sort||a.idx-b.idx)}return{grade,start,end,learned,unlearned,hasPlan:!!P}}
+function filter(rows){const k=state.search.trim().toLowerCase();return k?rows.filter(r=>[r.module,r.chapter,r.section,r.lesson,r.date].some(x=>String(x||'').toLowerCase().includes(k))):rows}
+function render(){const x=compute();$('studentName').textContent=state.student;$('learnedCount').textContent=x.learned.length;$('unlearnedCount').textContent=x.hasPlan?x.unlearned.length:'—';$('summer').classList.toggle('on',state.stage==='summer');$('fall').classList.toggle('on',state.stage==='fall');$('tabLearned').classList.toggle('on',state.tab==='learned');$('tabUnlearned').classList.toggle('on',state.tab==='unlearned');$('tabLearned').textContent=`已学 ${x.learned.length}`;$('tabUnlearned').textContent=`未学 ${x.hasPlan?x.unlearned.length:'—'}`;$('export').textContent=state.stage==='fall'?'导出秋季':'导出暑假';$('export').disabled=!x.hasPlan;
+  const rows=filter(state.tab==='learned'?x.learned:x.unlearned);if(state.tab==='unlearned'&&!x.hasPlan){$('content').innerHTML='<div class="empty">该学生尚未导入当前阶段规划，无法计算未学题模。</div>';return}if(!rows.length){$('content').innerHTML='<div class="empty">当前条件下没有数据。</div>';return}
+  if(state.tab==='learned'){$('content').innerHTML=`<table><thead><tr><th>学习日期</th><th>章节</th><th>章/节/专题</th><th>题模名称</th><th>是否过关</th><th>前测</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.dates)}</td><td>${esc(r.chapter)}</td><td>${esc(r.section)}</td><td class="module">${esc(r.module)}</td><td class="${r.pass?'pass':'fail'}">${r.pass?'过关':'未过关'}</td><td>${esc(r.pre)}</td></tr>`).join('')}</tbody></table>`}else{$('content').innerHTML=`<table><thead><tr><th>计划课次</th><th>计划日期</th><th>章节</th><th>章/节/专题</th><th>题模名称</th><th>规划类型</th><th>时长(min)</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.lesson)}</td><td>${esc(r.date)}</td><td>${esc(r.chapter)}</td><td>${esc(r.section)}</td><td class="module">${esc(r.module)}</td><td>${esc(r.type)}</td><td>${esc(r.dur)}</td></tr>`).join('')}</tbody></table>`}}
+let XLSXlib=null;
+function ensureXLSX(){if(XLSXlib)return Promise.resolve(XLSXlib);if(window.XLSX){XLSXlib=window.XLSX;return Promise.resolve(XLSXlib)}return new Promise((resolve,reject)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';s.onload=()=>{XLSXlib=window.XLSX;resolve(XLSXlib)};s.onerror=()=>reject(new Error('无法加载导出组件'));document.head.appendChild(s)})}
+function normDate(v){const s=String(v??'').trim();let m=s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);if(m)return `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);if(m)return `${m[3].length===2?'20'+m[3]:m[3]}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`;return ''}
+function learnedValues(item,start,end){const r=item.record||{},src={...(r.src||{})},inStage=d=>d&&d>=start&&(!end||d<end);src['学生名称']??=r.n||state.student;src['学科']??='初中数学';src['题模名称']??=r.m||item.module;src['前测是否答对']??=r.pre||'';src['是否过关']??=r.p?'过关':'未过关';if(!r.src){const test=(r.testActs||[]).filter(inStage),nw=(r.newActs||[]).filter(inStage),rein=(r.reinforceActs||[]).filter(inStage);src['前测日期']=test[0]||'';nw.slice(0,3).forEach((d,i)=>src[`新知学日期${i+1}`]=d);rein.slice(0,3).forEach((d,i)=>src[`巩固学日期${i+1}`]=d)}const clear=(dateKey,related)=>{const d=normDate(src[dateKey]);if(d&&inStage(d))return;[dateKey,...related].forEach(k=>src[k]='')};clear('前测日期',['前测是否答对']);for(let i=1;i<=3;i++){clear(`新知学日期${i}`,[`新知学正确率${i}`,`新知学结果${i}`]);clear(`巩固学日期${i}`,[`巩固学正确率${i}`,`巩固学结果${i}`])}for(let i=1;i<=5;i++)clear(`答题时间${i}`,[`消错题结果${i}`]);return STAT_HEADERS.map(h=>src[h]??'')}
+function exportCurrent(){const x=compute(),stu=state.student,stageLabel=state.stage==='fall'?'秋季':'暑假';if(!x.hasPlan){alert(`${stu}尚未导入${stageLabel}规划，无法导出`);return}const learnedRows=x.learned.map(r=>learnedValues(r,x.start,x.end));const unHeaders=['学生','阶段','年级','计划课次','计划日期','章节','章/节/专题','题模名称','规划类型','计划时长(min)'];const unRows=x.unlearned.map(r=>[stu,stageLabel,x.grade,r.lesson,r.date,r.chapter,r.section,r.module,r.type,r.dur]);const learnedAoa=[[`${stu}${stageLabel}已学数据`],['统计阶段',stageLabel,'第1次课日期',x.start,'阶段结束日期',x.end||'','已学题模数',learnedRows.length],[],STAT_HEADERS,...learnedRows];const unAoa=[[`${stu}${stageLabel}未学题模清单`],['统计阶段',stageLabel,'第1次课日期',x.start,'未学题模数',unRows.length],[],unHeaders,...unRows];const btn=$('export'),old=btn.textContent;btn.disabled=true;btn.textContent='正在导出…';ensureXLSX().then(X=>{const a=X.utils.aoa_to_sheet(learnedAoa),b=X.utils.aoa_to_sheet(unAoa);a['!cols']=STAT_HEADERS.map(h=>({wch:h==='题模名称'?48:(h.includes('日期')||h.includes('时间')?16:14)}));a['!autofilter']={ref:`A4:AP${learnedAoa.length}`};b['!cols']=[10,8,8,14,14,24,30,48,12,16].map(w=>({wch:w}));b['!autofilter']={ref:`A4:J${unAoa.length}`};const wb=X.utils.book_new();X.utils.book_append_sheet(wb,a,'已学');X.utils.book_append_sheet(wb,b,'未学');const safe=s=>String(s).replace(/[\\/:*?"<>|]/g,'_');X.writeFile(wb,`${safe(stu)}_${stageLabel}学情_${new Date().toISOString().slice(0,10)}.xlsx`,{compression:true})}).catch(e=>alert(e.message||'导出失败')).finally(()=>{btn.disabled=false;btn.textContent=old})}
+function initData(data){if(DATA)return;DATA=data;makeTrees();const students=[...new Set((DATA.records||[]).map(r=>r.n))].sort((a,b)=>a.localeCompare(b,'zh'));$('student').innerHTML=students.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');state.student=students.includes(param().get('student'))?param().get('student'):students[0]||'';state.stage=param().get('stage')==='fall'?'fall':'summer';$('student').value=state.student;$('sync').textContent=DATA.generatedAt?`数据更新：${DATA.generatedAt}`:'';render()}
+async function load(){try{if(location.protocol!=='file:'){const [d,h]=await Promise.all([fetch('data.json?'+Date.now(),{cache:'no-store'}).then(r=>r.json()),fetch('index.html?'+Date.now(),{cache:'no-store'}).then(r=>r.text())]);const m=h.match(/<script id="EMBED_DATA" type="application\/json">([\s\S]*?)<\/script>/);initData({...d,tree:m?JSON.parse(m[1]).tree:null});return}if(window.parent!==window){window.parent.postMessage({type:'math-dashboard-details-ready'},'*');return}if(window.opener&&typeof window.opener.getDashboardData==='function')initData(window.opener.getDashboardData());else throw new Error('本地明细页需要从学习看板进入')}catch(e){$('content').innerHTML='<div class="empty">数据读取失败。请从原学习看板点击“查看学习明细”进入。</div>'}}
+window.addEventListener('message',e=>{if(e.data?.type==='math-dashboard-data'&&e.data.data)initData(e.data.data)});
+$('student').onchange=e=>{state.student=e.target.value;render()};$('summer').onclick=()=>{state.stage='summer';render()};$('fall').onclick=()=>{state.stage='fall';render()};$('tabLearned').onclick=()=>{state.tab='learned';render()};$('tabUnlearned').onclick=()=>{state.tab='unlearned';render()};$('search').oninput=e=>{state.search=e.target.value;render()};$('export').onclick=exportCurrent;$('back').onclick=e=>{if(window.parent!==window){e.preventDefault();window.parent.postMessage({type:'math-dashboard-details-close'},'*')}};load();
+</script>
+</body>
+</html>
