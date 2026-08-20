@@ -500,7 +500,7 @@ footer{margin-top:28px;font-size:11px;color:var(--ink-faint);text-align:center;l
       <input type="file" id="fileRecords" accept=".xlsx,.xls">
       <label class="btn" for="filePlan">导入计划进度</label>
       <label class="btn share" id="shareBtn" for="fileShare" style="display:none" title="把答题记录/课次明细直接上传到共享仓库，1~3分钟后所有人自动看到新数据">上传共享数据</label>
-      <button class="btn primary export-unlearned" id="exportUnlearned" type="button">导出未学题模</button>
+      <button class="btn primary export-unlearned" id="exportUnlearned" type="button">导出暑假</button>
       <input type="file" id="fileShare" accept=".xlsx,.csv" multiple style="display:none">
       <input type="file" id="filePlan" accept=".xlsx,.xls,.csv">
       <button class="btn" id="btnPlanTpl">计划表格式</button>
@@ -2375,6 +2375,15 @@ function hookTip(el){
 }
 
 /* ================= 导入 ================= */
+const STAT_EXPORT_HEADERS=[
+  '学生名称','学生等级','规划等级','学科','题模名称','题模难度','前测是否答对','前测日期',
+  '新知学正确率1','新知学结果1','新知学日期1','新知学正确率2','新知学结果2','新知学日期2',
+  '新知学正确率3','新知学结果3','新知学日期3','巩固学正确率1','巩固学结果1','巩固学日期1',
+  '巩固学正确率2','巩固学结果2','巩固学日期2','巩固学正确率3','巩固学结果3','巩固学日期3',
+  '消错题结果1','答题时间1','消错题结果2','答题时间2','消错题结果3','答题时间3',
+  '消错题结果4','答题时间4','消错题结果5','答题时间5','是否过关','试卷答对题数',
+  '试卷答错次数','外部试卷过关','外部过关来源','最近试卷名称'
+];
 function applyRecordRows(js){
   const cols0=Object.keys(js[0]);
   const ansCols=cols0.filter(c=>c.includes('答题时间')||c.includes('作答时间'));
@@ -2407,11 +2416,13 @@ function applyRecordRows(js){
     const testActs=preDay&&base.has(preDay)?[preDay]:[];
     const studyActs=[...new Set([...studyDays,...answerDays.filter(d=>d!==preDay)])].sort();
     const acts=[...base].sort();
+    const src={};
+    STAT_EXPORT_HEADERS.forEach(h=>{ src[h]=r[h]??''; });
     return {n:String(r['学生名称']).trim(), m:String(r['题模名称']).trim(),
             p:String(r['是否过关']).trim()==='过关'?1:0,
             dt: pick(r,ansCols) || pick(r,dayCols),
             pre:r['前测是否答对']?String(r['前测是否答对']).trim():'',
-            acts,studyActs,newActs,reinforceActs,testActs};
+            acts,studyActs,newActs,reinforceActs,testActs,src};
   }).filter(r=>r.n && r.n!=='null' && r.m && r.m!=='null');
 }
 window.applyRecordRows=applyRecordRows;
@@ -2519,6 +2530,54 @@ function unlearnedModulesFor(stu, grade, stage){
   return {start, rows:rows.map(x=>x.values)};
 }
 
+/* 当前学生、当前阶段已有学习数据的题模。暑假截止到秋季第1次课之前；
+   秋季从秋季第1次课起。只含消错题、没有正常学习日期的记录不导出。 */
+function learnedModulesFor(stu, grade, stage){
+  const start=stage==='fall'?fallFirstLessonDate(stu):firstLessonDate(stu);
+  const end=stage==='summer'&&plansFall[stu]?fallFirstLessonDate(stu):null;
+  const inStage=d=>d&&d>=start&&(!end||d<end);
+  const rows=[];
+  records.forEach(r=>{
+    if(r.n!==stu) return;
+    const dates=recordDays(r).filter(inStage).sort();
+    if(!dates.length) return;
+    const src={...(r.src||{})};
+    // 旧版 data.json 没有保存统计表原行时，用当前已有字段补齐可还原的列；
+    // 新导入和后续云端构建会完整保留上传统计表的42列。
+    src['学生名称']??=stu;
+    src['学科']??='初中数学';
+    src['题模名称']??=r.m;
+    src['前测是否答对']??=r.pre||'';
+    src['是否过关']??=r.p?'过关':'未过关';
+    const testDates=recordTestDays(r).filter(inStage).sort();
+    const newDates=recordNewDays(r).filter(inStage).sort();
+    const reinforceDates=recordReinforceDays(r).filter(inStage).sort();
+    if(!r.src){
+      src['前测日期']=testDates[0]||'';
+      newDates.slice(0,3).forEach((d,i)=>{ src[`新知学日期${i+1}`]=d; });
+      reinforceDates.slice(0,3).forEach((d,i)=>{ src[`巩固学日期${i+1}`]=d; });
+    }
+    const clearOutside=(dateKey,related)=>{
+      const d=normDate(src[dateKey]);
+      if(d&&inStage(d)) return;
+      [dateKey,...related].forEach(k=>{ src[k]=''; });
+    };
+    clearOutside('前测日期',['前测是否答对']);
+    for(let i=1;i<=3;i++){
+      clearOutside(`新知学日期${i}`,[`新知学正确率${i}`,`新知学结果${i}`]);
+      clearOutside(`巩固学日期${i}`,[`巩固学正确率${i}`,`巩固学结果${i}`]);
+    }
+    for(let i=1;i<=5;i++) clearOutside(`答题时间${i}`,[`消错题结果${i}`]);
+    rows.push({
+      sortDate:dates[0],
+      sortName:r.m,
+      values:STAT_EXPORT_HEADERS.map(h=>src[h]??'')
+    });
+  });
+  rows.sort((a,b)=>a.sortDate.localeCompare(b.sortDate)||a.sortName.localeCompare(b.sortName,'zh'));
+  return {start,end,rows:rows.map(x=>x.values)};
+}
+
 function downloadCsvFallback(filename, aoa){
   const csv=aoa.map(row=>row.map(v=>{
     const s=String(v??'');
@@ -2533,34 +2592,46 @@ document.getElementById('exportUnlearned').addEventListener('click',async()=>{
   const stu=state.student;
   if(!stu) return;
   const grade=detectGrade(stu), stage=state.stage;
-  const result=unlearnedModulesFor(stu,grade,stage);
+  const unlearned=unlearnedModulesFor(stu,grade,stage);
+  const learned=learnedModulesFor(stu,grade,stage);
   const stageLabel=stage==='fall'?'秋季':'暑假';
-  if(!result){ toast(`${stu}尚未导入${stageLabel}规划，无法导出`); return; }
-  if(!result.rows.length){ toast(`${stu}${stageLabel}规划内暂无未学题模`); return; }
-  const headers=['学生','阶段','年级','计划课次','计划日期','章节','章/节/专题','题模名称','规划类型','计划时长(min)'];
-  const aoa=[
-    [`${stu}${stageLabel}未学题模清单`],
-    ['统计阶段',stageLabel,'第1次课日期',result.start,'未学题模数',result.rows.length],
+  if(!unlearned){ toast(`${stu}尚未导入${stageLabel}规划，无法导出`); return; }
+  const unlearnedHeaders=['学生','阶段','年级','计划课次','计划日期','章节','章/节/专题','题模名称','规划类型','计划时长(min)'];
+  const learnedAoa=[
+    [`${stu}${stageLabel}已学数据`],
+    ['统计阶段',stageLabel,'第1次课日期',learned.start,'阶段结束日期',learned.end||'','已学题模数',learned.rows.length],
     [],
-    headers,
-    ...result.rows
+    STAT_EXPORT_HEADERS,
+    ...learned.rows
+  ];
+  const unlearnedAoa=[
+    [`${stu}${stageLabel}未学题模清单`],
+    ['统计阶段',stageLabel,'第1次课日期',unlearned.start,'未学题模数',unlearned.rows.length],
+    [],
+    unlearnedHeaders,
+    ...unlearned.rows
   ];
   const safe=s=>String(s).replace(/[\\/:*?"<>|]/g,'_');
-  const filename=`${safe(stu)}_${stageLabel}未学题模_${new Date().toISOString().slice(0,10)}.xlsx`;
+  const filename=`${safe(stu)}_${stageLabel}学情_${new Date().toISOString().slice(0,10)}.xlsx`;
   const btn=document.getElementById('exportUnlearned');
   const old=btn.textContent; btn.disabled=true; btn.textContent='正在导出…';
   try{
     const X=await ensureXLSX();
-    const ws=X.utils.aoa_to_sheet(aoa);
-    ws['!cols']=[10,8,8,14,14,24,30,48,12,16].map(w=>({wch:w}));
-    ws['!autofilter']={ref:`A4:J${aoa.length}`};
+    const learnedWs=X.utils.aoa_to_sheet(learnedAoa);
+    learnedWs['!cols']=STAT_EXPORT_HEADERS.map(h=>({wch:h==='题模名称'?48:(h.includes('日期')||h.includes('时间')?16:14)}));
+    learnedWs['!autofilter']={ref:`A4:AP${learnedAoa.length}`};
+    const unlearnedWs=X.utils.aoa_to_sheet(unlearnedAoa);
+    unlearnedWs['!cols']=[10,8,8,14,14,24,30,48,12,16].map(w=>({wch:w}));
+    unlearnedWs['!autofilter']={ref:`A4:J${unlearnedAoa.length}`};
     const wb=X.utils.book_new();
-    X.utils.book_append_sheet(wb,ws,'未学题模');
+    X.utils.book_append_sheet(wb,learnedWs,'已学');
+    X.utils.book_append_sheet(wb,unlearnedWs,'未学');
     X.writeFile(wb,filename,{compression:true});
-    toast(`已导出 ${stu}${stageLabel}未学题模 ${result.rows.length} 个`);
+    toast(`已导出 ${stu}${stageLabel}：已学 ${learned.rows.length} 个，未学 ${unlearned.rows.length} 个`);
   }catch(err){
-    downloadCsvFallback(filename,aoa);
-    toast(`Excel 导出组件不可用，已改为导出 CSV（${result.rows.length} 个题模）`);
+    downloadCsvFallback(filename.replace(/\.xlsx$/,'_已学.xlsx'),learnedAoa);
+    downloadCsvFallback(filename.replace(/\.xlsx$/,'_未学.xlsx'),unlearnedAoa);
+    toast(`Excel 导出组件不可用，已分别导出“已学”和“未学”CSV`);
   }finally{
     btn.disabled=false; btn.textContent=old;
   }
@@ -2660,9 +2731,9 @@ function renderViewSwitches(stu){
   const exportBtn=document.getElementById('exportUnlearned');
   const stageLabel=state.stage==='fall'?'秋季':'暑假';
   const activePlan=state.stage==='fall'?plansFall[stu]:plans[stu];
-  exportBtn.textContent=`导出${stageLabel}未学题模`;
+  exportBtn.textContent=`导出${stageLabel}`;
   exportBtn.disabled=!(activePlan&&!Array.isArray(activePlan)&&activePlan.lessons&&activePlan.lessons.length);
-  exportBtn.title=exportBtn.disabled?`尚未导入该学生的${stageLabel}规划`:`导出${stu}${stageLabel}规划内尚未学习的题模`;
+  exportBtn.title=exportBtn.disabled?`尚未导入该学生的${stageLabel}规划`:`导出${stu}${stageLabel}的已学数据与未学题模`;
   document.querySelectorAll('#progressSwitch [data-progress-pass]').forEach(btn=>{
     const on=btn.dataset.progressPass==='first'?state.progressFirst:state.progressSecond;
     btn.classList.toggle('active',on);
