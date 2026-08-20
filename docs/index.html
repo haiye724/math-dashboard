@@ -1439,8 +1439,8 @@ function firstPassNature(r, secondDays, planType, endDate=null){
 /* 该计划知识点是否计入统计（"暑期总复习"等伪知识点不计） */
 /* 测学类判定：兼容"测学(进度)"等带后缀写法 */
 function isCe(ty){ return typeof ty==='string' && ty.indexOf('测学')===0; }
-/* 不计入统计的计划条目：总复习/选学/回顾块/考试类 */
-const PLAN_SKIP_TYPES = new Set(['暑期总复习','选学','回顾块','章节限时测','模拟考']);
+/* 不计入统计的计划条目：总复习/选学/错题回顾/回顾块/考试类 */
+const PLAN_SKIP_TYPES = new Set(['暑期总复习','选学','错题回顾','回顾块','章节限时测','模拟考']);
 function planCounted(P, n, t){
   if(PLAN_SKIP_TYPES.has(P.types[n])) return false;
   if(t && !t.byName.has(n)) return false;   // 章节序（知识树）中不存在的伪知识点不计
