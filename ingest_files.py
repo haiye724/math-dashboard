@@ -13,6 +13,26 @@ import pandas as pd
 
 UP, OUT = "uploads", os.path.join("docs", "data.json")
 
+# “已学”导出必须与用户上传的统计结果表保持完全相同的表头和顺序。
+STAT_HEADERS = [
+    "学生名称","学生等级","规划等级","学科","题模名称","题模难度","前测是否答对","前测日期",
+    "新知学正确率1","新知学结果1","新知学日期1","新知学正确率2","新知学结果2","新知学日期2",
+    "新知学正确率3","新知学结果3","新知学日期3","巩固学正确率1","巩固学结果1","巩固学日期1",
+    "巩固学正确率2","巩固学结果2","巩固学日期2","巩固学正确率3","巩固学结果3","巩固学日期3",
+    "消错题结果1","答题时间1","消错题结果2","答题时间2","消错题结果3","答题时间3",
+    "消错题结果4","答题时间4","消错题结果5","答题时间5","是否过关","试卷答对题数",
+    "试卷答错次数","外部试卷过关","外部过关来源","最近试卷名称"
+]
+
+def json_value(v):
+    if pd.isna(v):
+        return ""
+    if isinstance(v, pd.Timestamp):
+        return v.strftime("%Y-%m-%d")
+    if hasattr(v, "item"):
+        v = v.item()
+    return v
+
 def nd(v):
     m = re.match(r"(\d{4})[-/年](\d{1,2})[-/月](\d{1,2})", str(v))
     return f"{m.group(1)}-{int(m.group(2)):02d}-{int(m.group(3)):02d}" if m else None
@@ -40,7 +60,7 @@ def parse_one(f):
     cur = full.drop_duplicates(subset=["学生名称","题模名称"], keep="last")
     if "学科" in cur.columns:
         cur = cur[cur["学科"].astype(str).str.contains("数学")]
-    new_cols = [c for c in ["新知学日期1","新知学日期2"] if c in cur.columns]
+    new_cols = [c for c in ["新知学日期1","新知学日期2","新知学日期3"] if c in cur.columns]
     reinforce_cols = [c for c in ["巩固学日期1","巩固学日期2","巩固学日期3"] if c in cur.columns]
     recs = []
     for _, r in cur.iterrows():
@@ -71,12 +91,13 @@ def parse_one(f):
         normal_days = explicit_study | {d for d in ans_ok if d != pre_d}
         acts = sorted(base)
         dt = max(ans_all) if ans_all else (max(acts) if acts else None)
+        src = {h: json_value(r.get(h, "")) for h in STAT_HEADERS}
         recs.append({"n": stu, "m": mod,
                      "p": 1 if str(r["是否过关"]).strip() == "过关" else 0,
                      "dt": dt, "pre": str(r.get("前测是否答对", "/")).strip() or "/",
                      "acts": acts, "studyActs": sorted(normal_days),
                      "newActs": sorted(new_days), "reinforceActs": sorted(reinforce_days),
-                     "testActs": sorted(test_days)})
+                     "testActs": sorted(test_days), "src": src})
     if "学科" in full.columns:
         full = full[full["学科"].astype(str).str.contains("数学")]
     fl = {}
