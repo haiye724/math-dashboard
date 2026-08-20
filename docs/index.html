@@ -1521,14 +1521,26 @@ function renderProgress(stu, grade, inGrade){
     cuts2.forEach(c=>{ c.no=dayNo[c.date]||c.no; });
   }
 
-  // 暑假规划先按“大幅回头”的内容拆遍次；如果实际已经进入二遍，
-  // 则从实际二遍开始的课次起，后续同编号计划也转入二遍进度条。
-  // 这样一遍已经完成、实际第 N 课开始回头复习时，计划第 N 课不会继续留在一遍栏。
+  // 暑假规划先按“大幅回头”的内容拆遍次。实际出现二遍后，不能把后续计划整体搬走：
+  // 只有该计划课所在章的一遍进度已经到达该计划位置，才把这一课转入二遍。
+  // 这既能让郭宸祎已完成的一遍计划进入二遍，也不会因杨婧美偶尔回头复习而误搬后续计划。
   const stagePlanCuts=planCuts(stu,grade,state.stage);
+  const actualLearnedSet=new Set(aCuts.learnedIdx||[]);
   const actualSecondStartNo=cuts2.length?Math.min(...cuts2.map(c=>c.no)):Infinity;
+  const firstFarByChapter=new Map(t.real.map(ch=>{
+    const xs=[...actualLearnedSet].filter(i=>i>=ch.start&&i<ch.start+ch.len);
+    return [ch.start,xs.length?Math.max(...xs):-1];
+  }));
+  const firstReachedPlanCut=c=>{
+    const idxs=(c.idxs||[]).filter(i=>i!==undefined&&t.inReal(i));
+    if(!idxs.length) return false;
+    const anchor=c.anchor??Math.max(...idxs);
+    const ch=t.real.find(x=>anchor>=x.start&&anchor<x.start+x.len);
+    return !!ch&&(firstFarByChapter.get(ch.start)??-1)>=anchor;
+  };
   const effectivePlanRound=c=>{
     if(state.stage==='fall'||c.round===2) return 2;
-    return Number(c.no)>=actualSecondStartNo?2:1;
+    return Number(c.no)>=actualSecondStartNo&&firstReachedPlanCut(c)?2:1;
   };
   const normalizePlanLane=cuts=>{
     let far=-1;
@@ -1541,7 +1553,6 @@ function renderProgress(stu, grade, inGrade){
   const pCuts=state.stage==='summer'
     ? normalizePlanLane(stagePlanCuts.filter(c=>effectivePlanRound(c)===1)) : [];
   const pCuts2=normalizePlanLane(stagePlanCuts.filter(c=>effectivePlanRound(c)===2));
-  const actualLearnedSet=new Set(aCuts.learnedIdx||[]);
   const actualIdx = aCuts.learnedIdx && aCuts.learnedIdx.length
     ? aCuts.learnedIdx[aCuts.learnedIdx.length-1] : -1;
   document.getElementById('planHint').style.display = (pCuts.length||pCuts2.length)?'none':'block';
@@ -1700,7 +1711,8 @@ function renderProgress(stu, grade, inGrade){
       paceHtmlByNo[c.no]=`<span class="pace-badge ${slow?'slow':'fast'}" title="实际第${c.no}课固定对应计划第${pk}课；计划内未完成 ${missing.length} 个、提前完成 ${ahead.length} 个（其中开课前已完成 ${historicalAhead} 个）；测学与必学统一计入，折算相差 ${mins}min">${slow?'慢':'快'} ${hrs}h</span>`;
     });
   }
-  // 计划课次数量严格取规划表；该课的规划区域已被对应进度条连续覆盖后隐藏标签。
+  // 计划课次数量严格取规划表。实际已经上到第 N 课时，计划第 1～N 课均属于已到课，
+  // 不再显示计划标签；其中未完成的内容通过对应课次的“慢 Xh”体现，不能让旧计划标签滞留。
   const firstCovered=new Set(actualLearnedSet);
   const secondCovered=new Set(secondModIdx);
   cuts2.forEach(c=>(c.ranges||[]).forEach(r=>{
@@ -1715,8 +1727,10 @@ function renderProgress(stu, grade, inGrade){
     const idxs=(c.idxs||[]).filter(i=>i!==undefined&&t.inReal(i));
     return idxs.length>0 && idxs.every(i=>doneSet.has(i));
   };
-  const planTags=pCuts.filter(c=>!planCutDone(c,firstCovered));
-  const planTags2=pCuts2.filter(c=>!planCutDone(c,secondCovered));
+  const latestActualNo=Math.max(0,...aCuts.map(c=>Number(c.no)||0),...cuts2.map(c=>Number(c.no)||0));
+  const isFuturePlanCut=c=>(Number(c.no)||0)>latestActualNo;
+  const planTags=pCuts.filter(c=>isFuturePlanCut(c)&&!planCutDone(c,firstCovered));
+  const planTags2=pCuts2.filter(c=>isFuturePlanCut(c)&&!planCutDone(c,secondCovered));
 
   const paintJobs=[];
 
