@@ -311,9 +311,16 @@ input[type=file]{display:none}
 .vbar .fill-seg{position:absolute;left:0;right:0}
 .vbar .plan-seg,.vbar .second-plan-seg{z-index:1;border-bottom:2px dashed #fff;box-sizing:border-box}
 .vbar .act-seg{z-index:2;box-sizing:border-box}
+.vbar .act-course-seg{z-index:2;box-sizing:border-box}
 .vbar .act-divider{
   position:absolute;left:0;right:0;height:2px;z-index:3;
   background:#fff;transform:translateY(-1px);pointer-events:none;
+}
+.vbar .position-marker{
+  position:absolute;left:-1px;right:-1px;height:5px;z-index:6;
+  background:var(--accent);border-radius:3px;
+  box-shadow:0 1px 3px rgba(75,48,15,.4);pointer-events:none;
+  transform:translateY(-50%);
 }
 .vbar .fail-mark{
   position:absolute;left:50%;transform:translate(-50%,-50%);z-index:4;
@@ -355,11 +362,6 @@ input[type=file]{display:none}
 .vsec-label.reached{color:var(--actual-2);font-weight:600}
 .vsec-label.current{color:var(--ink-deep);font-weight:700}
 .vsec-label.skipped,.vsec-label.skipped .mcnt{color:#B7C0C8;font-weight:400}
-.vsec-label .flag{
-  font-size:12px;font-weight:700;color:#fff;background:var(--accent);
-  border-radius:5px;padding:3px 6px;white-space:nowrap;
-  box-shadow:0 1px 4px rgba(176,120,42,.4);
-}
 .cut-line{position:absolute;left:0;right:0;height:0;border-top:2px dashed rgba(255,255,255,.9);z-index:2;pointer-events:none}
 .chap-tag{
   display:inline-block;vertical-align:2px;margin-left:8px;
@@ -376,6 +378,7 @@ input[type=file]{display:none}
   background:#3E8E5A;border-bottom:2px solid #fff;
 }
 .lesson-tag.second-tag{background:#E6F2EA;color:#2F7048;border:1px solid #3E8E5A}
+.lesson-tag.second-date-tag{background:#F2F8F4;color:#2F7048;border:1px solid #76A988}
 .lesson-tag.second-plan-tag{background:#D8E9DE;color:#2F7048}
 .lesson-line{
   position:absolute;left:0;right:0;transform:translateY(-100%);
@@ -427,7 +430,6 @@ input[type=file]{display:none}
   .vchap-head .cnt{display:none}
   .vsec-label{font-size:12px;gap:5px;min-height:32px}
   .vsec-label .mcnt{display:none}
-  .vsec-label .flag{font-size:11px;padding:2px 5px}
   .lesson-line{flex-wrap:wrap;row-gap:2px}
   .lesson-tag{font-size:10px;padding:3px 5px}
   .pace-badge{font-size:10px;padding:3px 5px}
@@ -1514,30 +1516,10 @@ function renderProgress(stu, grade, inGrade){
   }
 
   // —— 实际课次：同一阶段内按日期编号；切换暑假/秋季后各自从第1课重新计算 ——
-  {
-    const allDays=Array.from(new Set([...aCuts.map(c=>c.date), ...(hasSecond? sp.dates:[])])).sort();
-    const dayNo={}; allDays.forEach((d,i)=>dayNo[d]=i+1);
-    aCuts.forEach(c=>{ c.no=dayNo[c.date]||c.no; });
-    cuts2.forEach(c=>{ c.no=dayNo[c.date]||c.no; });
-    // 同一天可能同时学习一遍和二遍内容，但实际课次只能显示一次。
-    // 混合课程放在当天题模数量较多的一侧；数量相同时优先放在一遍学。
-    const firstByDate=new Map(aCuts.map(c=>[c.date,c]));
-    const secondByDate=new Map(cuts2.map(c=>[c.date,c]));
-    allDays.forEach(d=>{
-      const first=firstByDate.get(d), second=secondByDate.get(d);
-      let round=first?1:2;
-      if(first&&second){
-        const firstN=new Set(first.idxs||[]).size;
-        const secondN=new Set(second.idxs||[]).size;
-        round=secondN>firstN?2:1;
-      }
-      if(first) first.showLessonLabel=round===1;
-      if(second){
-        second.showLessonLabel=round===2;
-        second.lessonLabelAnchor=Math.max(-1,...(second.idxs||[]));
-      }
-    });
-  }
+  const allDays=Array.from(new Set([...aCuts.map(c=>c.date), ...(hasSecond? sp.dates:[])])).sort();
+  const dayNo={}; allDays.forEach((d,i)=>dayNo[d]=i+1);
+  aCuts.forEach(c=>{ c.no=dayNo[c.date]||c.no; });
+  cuts2.forEach(c=>{ c.no=dayNo[c.date]||c.no; });
 
   // 暑假规划先按“大幅回头”的内容拆遍次。实际出现二遍后，不能把后续计划整体搬走：
   // 只有该计划课所在章的一遍进度已经到达该计划位置，才把这一课转入二遍。
@@ -1560,6 +1542,45 @@ function renderProgress(stu, grade, inGrade){
     if(state.stage==='fall'||c.round===2) return 2;
     return Number(c.no)>=actualSecondStartNo&&firstReachedPlanCut(c)?2:1;
   };
+
+  {
+    // 同一天可能同时学习一遍和二遍内容，但实际课次只能显示一次。
+    // 标签优先跟随同编号计划课所在的遍次；没有对应规划课时，才按当天两侧题模数量兜底。
+    const firstByDate=new Map(aCuts.map(c=>[c.date,c]));
+    const secondByDate=new Map(cuts2.map(c=>[c.date,c]));
+    allDays.forEach(d=>{
+      const first=firstByDate.get(d), second=secondByDate.get(d);
+      let round=first?1:2;
+      if(first&&second){
+        const lessonNo=first.no||second.no;
+        const planned=stagePlanCuts.find(c=>Number(c.no)===Number(lessonNo));
+        if(planned) round=effectivePlanRound(planned);
+        else{
+          const firstN=new Set(first.idxs||[]).size;
+          const secondN=new Set(second.idxs||[]).size;
+          round=secondN>firstN?2:1;
+        }
+      }
+      if(first) first.showLessonLabel=round===1;
+      if(second){
+        second.showLessonLabel=round===2;
+        second.lessonLabelAnchor=Math.max(-1,...(second.idxs||[]));
+      }
+    });
+    // “当前学习位置”取最新一次实际课，而不是历史上到达过的最远知识点。
+    const latestDate=allDays[allDays.length-1];
+    const latestFirst=firstByDate.get(latestDate), latestSecond=secondByDate.get(latestDate);
+    const latestCut=latestFirst&&latestFirst.showLessonLabel!==false?latestFirst:latestSecond;
+    if(latestCut){
+      aCuts.positionMarker={
+        round:latestCut===latestSecond?2:1,
+        idx:Math.max(-1,...(latestCut.idxs||[])),
+        no:latestCut.no,
+        date:latestCut.date
+      };
+    }
+  }
+
   const normalizePlanLane=cuts=>{
     let far=-1;
     return cuts.map(c=>{
@@ -1895,7 +1916,7 @@ function renderProgress(stu, grade, inGrade){
       const estH=secEstH(s);
       if(estH>34) lab.style.minHeight=estH+'px';
       if(actualIdx>end) cls+=' reached';
-      else if(actualIdx>=s.start){ cls+=' current'; flag='<span class="flag" title="当前学习位置" aria-label="当前学习位置">▶</span>'; }
+      else if(actualIdx>=s.start){ cls+=' current'; }
       if(skipped) cls+=' skipped';
       lab.className=cls;
       lab.innerHTML=`<span>${s.name.replace(/☽/g,'')}</span>${flag}`;
@@ -1935,7 +1956,7 @@ function makeYMapper(bar, ch, labelEls){
 /* 一章的进度条：浅色计划打底；深色只覆盖真实学过的知识点，课次标签按当天内容定位 */
 function paintBar(bar, lcol, ch, labelEls, pCuts, pCuts2, aCuts, ppal, ppal2, apal, t, secSkipped, secSkipped2, cntTextRef, failLC, failMax, paceHtmlByNo, planTags, planTags2, shortD, lcol2, cuts2, secondStartIdx, secondBar){
   const MIN=22;
-  const MIN_VISIBLE_FILL=6;
+  const MIN_VISIBLE_FILL=10;
   const setVisibleFill=(seg,y1,y2,host)=>{
     const raw=y2-y1;
     const height=Math.max(MIN_VISIBLE_FILL,raw);
@@ -2046,6 +2067,35 @@ function paintBar(bar, lcol, ch, labelEls, pCuts, pCuts2, aCuts, ppal, ppal2, ap
       seg.dataset.sub=from===to
         ? t.rows[from].m
         : `${t.rows[from].m} → ${t.rows[to].m}`;
+      hookTip(seg); bar.appendChild(seg);
+    });
+    // 每节课再绘制自己的实际区段，让最低高度按课次生效；底层累计色块仍负责连续填满。
+    // 这样单题模课程不会被合并后的大色块吞掉，第6、7课这类连续课程也能看清交界。
+    const courseRanges=[];
+    aCuts.forEach(c=>{
+      (c.ranges||[]).filter(r=>r.upto>=ch.start&&r.from<=chEnd).forEach(r=>{
+        const from0=Math.max(r.from,ch.start), to0=Math.min(r.upto,chEnd);
+        let from=null;
+        for(let i=from0;i<=to0+1;i++){
+          const blocked=i<=to0&&noFill.has(i);
+          if(i<=to0&&!blocked&&from==null) from=i;
+          if(from!=null&&(i>to0||blocked)){
+            courseRanges.push({no:c.no,date:c.date,from,to:i-1});
+            from=null;
+          }
+        }
+      });
+    });
+    courseRanges.forEach((r,i)=>{
+      const y1=yOf(r.from,false), y2=yOf(r.to,true);
+      if(y1==null||y2==null||y2<=y1) return;
+      const seg=document.createElement('div');
+      seg.className='fill-seg act-course-seg';
+      setVisibleFill(seg,y1,y2,bar);
+      seg.style.background=apal[0];
+      if(i>0) seg.style.boxShadow='inset 0 3px 0 #fff';
+      seg.dataset.tip=`第${r.no}课｜${r.date}`;
+      seg.dataset.sub=r.from===r.to?t.rows[r.from].m:`${t.rows[r.from].m} → ${t.rows[r.to].m}`;
       hookTip(seg); bar.appendChild(seg);
     });
     // 白线只标记同一章内不同课次的交界，不再切碎同一课的连续色块。
@@ -2172,12 +2222,14 @@ function paintBar(bar, lcol, ch, labelEls, pCuts, pCuts2, aCuts, ppal, ppal2, ap
         if(y1!=null&&y2!=null) labelY=(y1+y2)/2;
       }
       const labelAnchor=c.lessonLabelAnchor??Math.max(-1,...(c.idxs||[]));
-      if(lcol2&&c.showLessonLabel!==false&&labelAnchor>=ch.start&&labelAnchor<=chEnd){
-        if(labelY==null) return;
+      if(lcol2&&labelY!=null){
+        const showCourseNo=c.showLessonLabel!==false&&labelAnchor>=ch.start&&labelAnchor<=chEnd;
         const line=document.createElement('div');
         line.className='lesson-line';
         line.style.top=labelY+'px';
-        line.innerHTML=`<span class="lesson-tag second-tag" title="${c.date}（二遍）">第${c.no}课 ${shortD(c.date)}</span>${paceHtmlByNo[c.no]||''}`;
+        line.innerHTML=showCourseNo
+          ? `<span class="lesson-tag second-tag" title="${c.date}（二遍）">第${c.no}课 ${shortD(c.date)}</span>${paceHtmlByNo[c.no]||''}`
+          : `<span class="lesson-tag second-date-tag" title="${c.date}（二遍）">${shortD(c.date)}</span>`;
         lcol2.appendChild(line);
       }
     });
@@ -2235,6 +2287,24 @@ function paintBar(bar, lcol, ch, labelEls, pCuts, pCuts2, aCuts, ppal, ppal2, ap
     seg.dataset.sub='不在二遍规划范围内';
     hookTip(seg); greenBar.appendChild(seg);
   });
+  // 最新一次实际课的位置标记：一遍显示在蓝条，二遍显示在绿条；隐藏该遍时不显示。
+  const pm=aCuts.positionMarker;
+  if(pm&&pm.idx>=ch.start&&pm.idx<=chEnd){
+    const showFirst=pm.round===1&&lcol.isConnected;
+    const showSecond=pm.round===2&&lcol2&&lcol2.isConnected;
+    if(showFirst||showSecond){
+      const host=showSecond?greenBar:bar;
+      const mapper=showSecond?yOf2:yOf;
+      const y=mapper(pm.idx,true);
+      if(y!=null){
+        const marker=document.createElement('div');
+        marker.className='position-marker';
+        marker.style.top=Math.max(2,Math.min(host.clientHeight-2,y))+'px';
+        marker.title=`当前学习位置｜第${pm.no}课 ${pm.date}`;
+        host.appendChild(marker);
+      }
+    }
+  }
   // 标签去重叠：按锚点排序，重叠时向下让位（节高已按标签数加高，通常无需移动）
   if(lcol2){
     const lines2=[...lcol2.querySelectorAll('.lesson-line')]
