@@ -140,12 +140,11 @@ input[type=file]{display:none}
 .switch-btn:hover{border-color:var(--actual-2);color:var(--ink-deep)}
 .switch-btn.active{background:var(--ink-deep);border-color:var(--ink-deep);color:#fff}
 .switch-btn:disabled{opacity:.45;cursor:not-allowed}
-.export-unlearned{margin-left:auto;padding:6px 13px}
+.export-unlearned{padding:8px 14px}
 .progress-switch{margin:0 0 14px}
 @media (max-width:640px){
   .stage-head h2{font-size:19px}
   .stage-score{font-size:13px}
-  .export-unlearned{margin-left:0}
 }
 
 /* ---------- 目标切换按钮 ---------- */
@@ -501,6 +500,7 @@ footer{margin-top:28px;font-size:11px;color:var(--ink-faint);text-align:center;l
       <input type="file" id="fileRecords" accept=".xlsx,.xls">
       <label class="btn" for="filePlan">导入计划进度</label>
       <label class="btn share" id="shareBtn" for="fileShare" style="display:none" title="把答题记录/课次明细直接上传到共享仓库，1~3分钟后所有人自动看到新数据">上传共享数据</label>
+      <button class="btn primary export-unlearned" id="exportUnlearned" type="button">导出未学题模</button>
       <input type="file" id="fileShare" accept=".xlsx,.csv" multiple style="display:none">
       <input type="file" id="filePlan" accept=".xlsx,.xls,.csv">
       <button class="btn" id="btnPlanTpl">计划表格式</button>
@@ -532,7 +532,6 @@ footer{margin-top:28px;font-size:11px;color:var(--ink-faint);text-align:center;l
     <span class="switch-label">统计阶段</span>
     <button class="switch-btn active" data-stage="summer" type="button">暑假</button>
     <button class="switch-btn" data-stage="fall" type="button">秋季</button>
-    <button class="btn primary export-unlearned" id="exportUnlearned" type="button">导出未学题模</button>
   </div>
 
   <div class="cards cards-stack" id="summerCards">
