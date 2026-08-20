@@ -1750,8 +1750,9 @@ function renderProgress(stu, grade, inGrade){
       paceHtmlByNo[c.no]=`<span class="pace-badge ${slow?'slow':'fast'}" title="实际第${c.no}课固定对应计划第${pk}课；计划内未完成 ${missing.length} 个、提前完成 ${ahead.length} 个（其中开课前已完成 ${historicalAhead} 个）；测学与必学统一计入，折算相差 ${mins}min">${slow?'慢':'快'} ${hrs}h</span>`;
     });
   }
-  // 计划课次数量严格取规划表。实际已经上到第 N 课时，计划第 1～N 课均属于已到课，
-  // 不再显示计划标签；其中未完成的内容通过对应课次的“慢 Xh”体现，不能让旧计划标签滞留。
+  // 计划课次数量严格取规划表。实际已经上到第 N 课时：
+  // 计划第 1～N-1 课不再显示；计划第 N 课若尚未完成，仍保留计划进度和标签，
+  // 以便直观看出同课次内实际位置尚未追上计划终点。
   const firstCovered=new Set(actualLearnedSet);
   const secondCovered=new Set(secondModIdx);
   cuts2.forEach(c=>(c.ranges||[]).forEach(r=>{
@@ -1767,9 +1768,9 @@ function renderProgress(stu, grade, inGrade){
     return idxs.length>0 && idxs.every(i=>doneSet.has(i));
   };
   const latestActualNo=Math.max(0,...aCuts.map(c=>Number(c.no)||0),...cuts2.map(c=>Number(c.no)||0));
-  const isFuturePlanCut=c=>(Number(c.no)||0)>latestActualNo;
-  const planTags=pCuts.filter(c=>isFuturePlanCut(c)&&!planCutDone(c,firstCovered));
-  const planTags2=pCuts2.filter(c=>isFuturePlanCut(c)&&!planCutDone(c,secondCovered));
+  const isCurrentOrFuturePlanCut=c=>(Number(c.no)||0)>=latestActualNo;
+  const planTags=pCuts.filter(c=>isCurrentOrFuturePlanCut(c)&&!planCutDone(c,firstCovered));
+  const planTags2=pCuts2.filter(c=>isCurrentOrFuturePlanCut(c)&&!planCutDone(c,secondCovered));
 
   const paintJobs=[];
 
