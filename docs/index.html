@@ -140,10 +140,12 @@ input[type=file]{display:none}
 .switch-btn:hover{border-color:var(--actual-2);color:var(--ink-deep)}
 .switch-btn.active{background:var(--ink-deep);border-color:var(--ink-deep);color:#fff}
 .switch-btn:disabled{opacity:.45;cursor:not-allowed}
+.export-unlearned{margin-left:auto;padding:6px 13px}
 .progress-switch{margin:0 0 14px}
 @media (max-width:640px){
   .stage-head h2{font-size:19px}
   .stage-score{font-size:13px}
+  .export-unlearned{margin-left:0}
 }
 
 /* ---------- 目标切换按钮 ---------- */
@@ -530,6 +532,7 @@ footer{margin-top:28px;font-size:11px;color:var(--ink-faint);text-align:center;l
     <span class="switch-label">统计阶段</span>
     <button class="switch-btn active" data-stage="summer" type="button">暑假</button>
     <button class="switch-btn" data-stage="fall" type="button">秋季</button>
+    <button class="btn primary export-unlearned" id="exportUnlearned" type="button">导出未学题模</button>
   </div>
 
   <div class="cards cards-stack" id="summerCards">
@@ -2471,6 +2474,98 @@ function ensureXLSX(){
     document.head.appendChild(s);
   });
 }
+
+/* 当前学生、当前阶段的未学题模。口径与顶部进度卡一致：仅统计规划内有效题模，
+   并扣除本阶段第1次课之前已经学过的内容；消错题记录不算已学。 */
+function unlearnedModulesFor(stu, grade, stage){
+  const P=stage==='fall'?plansFall[stu]:plans[stu];
+  if(!P || Array.isArray(P) || !P.lessons || !P.lessons.length) return null;
+  const t=TREE[grade];
+  const start=stage==='fall'?fallFirstLessonDate(stu):firstLessonDate(stu);
+  const {current,prior}=studySets(stu,start);
+  const lessonByMod=new Map();
+  P.lessons.forEach((L,i)=>{
+    const no=Number(L.no)||i+1;
+    (L.names||[]).forEach(n=>{
+      const arr=lessonByMod.get(n)||[];
+      if(!arr.some(x=>x.no===no&&x.date===(L.date||''))) arr.push({no,date:L.date||''});
+      lessonByMod.set(n,arr);
+    });
+  });
+  const rows=[];
+  Object.keys(P.dur||{}).forEach(n=>{
+    if(!planCounted(P,n,t) || current.has(n) || prior.has(n)) return;
+    const idx=t.byName.get(n);
+    if(idx===undefined || !t.inReal(idx)) return;
+    const tr=t.rows[idx]||{};
+    const ls=(lessonByMod.get(n)||[]).sort((a,b)=>a.no-b.no);
+    rows.push({
+      sortLesson:ls.length?ls[0].no:9999,
+      sortIdx:idx,
+      values:[
+        stu,
+        stage==='fall'?'秋季':'暑假',
+        grade,
+        ls.map(x=>`第${x.no}课`).join('、'),
+        [...new Set(ls.map(x=>x.date).filter(Boolean))].join('、'),
+        String(tr.c||'').replace(/☽/g,''),
+        String(tr.s||'').replace(/☽/g,''),
+        n,
+        P.types[n]||'',
+        Number(P.dur[n])||0
+      ]
+    });
+  });
+  rows.sort((a,b)=>a.sortLesson-b.sortLesson||a.sortIdx-b.sortIdx);
+  return {start, rows:rows.map(x=>x.values)};
+}
+
+function downloadCsvFallback(filename, aoa){
+  const csv=aoa.map(row=>row.map(v=>{
+    const s=String(v??'');
+    return /[",\r\n]/.test(s)?`"${s.replace(/"/g,'""')}"`:s;
+  }).join(',')).join('\r\n');
+  const url=URL.createObjectURL(new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'}));
+  const a=document.createElement('a'); a.href=url; a.download=filename.replace(/\.xlsx$/i,'.csv');
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+
+document.getElementById('exportUnlearned').addEventListener('click',async()=>{
+  const stu=state.student;
+  if(!stu) return;
+  const grade=detectGrade(stu), stage=state.stage;
+  const result=unlearnedModulesFor(stu,grade,stage);
+  const stageLabel=stage==='fall'?'秋季':'暑假';
+  if(!result){ toast(`${stu}尚未导入${stageLabel}规划，无法导出`); return; }
+  if(!result.rows.length){ toast(`${stu}${stageLabel}规划内暂无未学题模`); return; }
+  const headers=['学生','阶段','年级','计划课次','计划日期','章节','章/节/专题','题模名称','规划类型','计划时长(min)'];
+  const aoa=[
+    [`${stu}${stageLabel}未学题模清单`],
+    ['统计阶段',stageLabel,'第1次课日期',result.start,'未学题模数',result.rows.length],
+    [],
+    headers,
+    ...result.rows
+  ];
+  const safe=s=>String(s).replace(/[\\/:*?"<>|]/g,'_');
+  const filename=`${safe(stu)}_${stageLabel}未学题模_${new Date().toISOString().slice(0,10)}.xlsx`;
+  const btn=document.getElementById('exportUnlearned');
+  const old=btn.textContent; btn.disabled=true; btn.textContent='正在导出…';
+  try{
+    const X=await ensureXLSX();
+    const ws=X.utils.aoa_to_sheet(aoa);
+    ws['!cols']=[10,8,8,14,14,24,30,48,12,16].map(w=>({wch:w}));
+    ws['!autofilter']={ref:`A4:J${aoa.length}`};
+    const wb=X.utils.book_new();
+    X.utils.book_append_sheet(wb,ws,'未学题模');
+    X.writeFile(wb,filename,{compression:true});
+    toast(`已导出 ${stu}${stageLabel}未学题模 ${result.rows.length} 个`);
+  }catch(err){
+    downloadCsvFallback(filename,aoa);
+    toast(`Excel 导出组件不可用，已改为导出 CSV（${result.rows.length} 个题模）`);
+  }finally{
+    btn.disabled=false; btn.textContent=old;
+  }
+});
 document.getElementById('fileRecords').addEventListener('change',async e=>{
   const f=e.target.files[0]; if(!f) return;
   try{
@@ -2563,6 +2658,12 @@ function renderViewSwitches(stu){
       btn.title=hasFall?'切换到秋季统计':'尚未导入该学生的秋季规划';
     }
   });
+  const exportBtn=document.getElementById('exportUnlearned');
+  const stageLabel=state.stage==='fall'?'秋季':'暑假';
+  const activePlan=state.stage==='fall'?plansFall[stu]:plans[stu];
+  exportBtn.textContent=`导出${stageLabel}未学题模`;
+  exportBtn.disabled=!(activePlan&&!Array.isArray(activePlan)&&activePlan.lessons&&activePlan.lessons.length);
+  exportBtn.title=exportBtn.disabled?`尚未导入该学生的${stageLabel}规划`:`导出${stu}${stageLabel}规划内尚未学习的题模`;
   document.querySelectorAll('#progressSwitch [data-progress-pass]').forEach(btn=>{
     const on=btn.dataset.progressPass==='first'?state.progressFirst:state.progressSecond;
     btn.classList.toggle('active',on);
