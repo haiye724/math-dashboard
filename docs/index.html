@@ -357,7 +357,7 @@ input[type=file]{display:none}
 .vsec-label.skipped,.vsec-label.skipped .mcnt{color:#B7C0C8;font-weight:400}
 .vsec-label .flag{
   font-size:12px;font-weight:700;color:#fff;background:var(--accent);
-  border-radius:5px;padding:3px 9px;white-space:nowrap;
+  border-radius:5px;padding:3px 6px;white-space:nowrap;
   box-shadow:0 1px 4px rgba(176,120,42,.4);
 }
 .cut-line{position:absolute;left:0;right:0;height:0;border-top:2px dashed rgba(255,255,255,.9);z-index:2;pointer-events:none}
@@ -427,7 +427,7 @@ input[type=file]{display:none}
   .vchap-head .cnt{display:none}
   .vsec-label{font-size:12px;gap:5px;min-height:32px}
   .vsec-label .mcnt{display:none}
-  .vsec-label .flag{font-size:11px;padding:2px 7px}
+  .vsec-label .flag{font-size:11px;padding:2px 5px}
   .lesson-line{flex-wrap:wrap;row-gap:2px}
   .lesson-tag{font-size:10px;padding:3px 5px}
   .pace-badge{font-size:10px;padding:3px 5px}
@@ -1519,6 +1519,24 @@ function renderProgress(stu, grade, inGrade){
     const dayNo={}; allDays.forEach((d,i)=>dayNo[d]=i+1);
     aCuts.forEach(c=>{ c.no=dayNo[c.date]||c.no; });
     cuts2.forEach(c=>{ c.no=dayNo[c.date]||c.no; });
+    // 同一天可能同时学习一遍和二遍内容，但实际课次只能显示一次。
+    // 混合课程放在当天题模数量较多的一侧；数量相同时优先放在一遍学。
+    const firstByDate=new Map(aCuts.map(c=>[c.date,c]));
+    const secondByDate=new Map(cuts2.map(c=>[c.date,c]));
+    allDays.forEach(d=>{
+      const first=firstByDate.get(d), second=secondByDate.get(d);
+      let round=first?1:2;
+      if(first&&second){
+        const firstN=new Set(first.idxs||[]).size;
+        const secondN=new Set(second.idxs||[]).size;
+        round=secondN>firstN?2:1;
+      }
+      if(first) first.showLessonLabel=round===1;
+      if(second){
+        second.showLessonLabel=round===2;
+        second.lessonLabelAnchor=Math.max(-1,...(second.idxs||[]));
+      }
+    });
   }
 
   // 暑假规划先按“大幅回头”的内容拆遍次。实际出现二遍后，不能把后续计划整体搬走：
@@ -1877,7 +1895,7 @@ function renderProgress(stu, grade, inGrade){
       const estH=secEstH(s);
       if(estH>34) lab.style.minHeight=estH+'px';
       if(actualIdx>end) cls+=' reached';
-      else if(actualIdx>=s.start){ cls+=' current'; flag='<span class="flag">学到这里 ▶</span>'; }
+      else if(actualIdx>=s.start){ cls+=' current'; flag='<span class="flag" title="当前学习位置" aria-label="当前学习位置">▶</span>'; }
       if(skipped) cls+=' skipped';
       lab.className=cls;
       lab.innerHTML=`<span>${s.name.replace(/☽/g,'')}</span>${flag}`;
@@ -1917,6 +1935,15 @@ function makeYMapper(bar, ch, labelEls){
 /* 一章的进度条：浅色计划打底；深色只覆盖真实学过的知识点，课次标签按当天内容定位 */
 function paintBar(bar, lcol, ch, labelEls, pCuts, pCuts2, aCuts, ppal, ppal2, apal, t, secSkipped, secSkipped2, cntTextRef, failLC, failMax, paceHtmlByNo, planTags, planTags2, shortD, lcol2, cuts2, secondStartIdx, secondBar){
   const MIN=22;
+  const MIN_VISIBLE_FILL=6;
+  const setVisibleFill=(seg,y1,y2,host)=>{
+    const raw=y2-y1;
+    const height=Math.max(MIN_VISIBLE_FILL,raw);
+    const maxTop=Math.max(0,host.clientHeight-height);
+    const top=raw>=MIN_VISIBLE_FILL?y1:Math.max(0,Math.min(y1-(height-raw)/2,maxTop));
+    seg.style.top=top+'px';
+    seg.style.height=height+'px';
+  };
   lcol.innerHTML='';
   if(lcol2) lcol2.innerHTML='';
   bar.innerHTML='';
@@ -2013,7 +2040,7 @@ function paintBar(bar, lcol, ch, labelEls, pCuts, pCuts2, aCuts, ppal, ppal2, ap
       const y1=yOf(from,false), y2=yOf(to,true);
       if(y1==null||y2==null||y2<=y1) return;
       const seg=document.createElement('div'); seg.className='fill-seg act-seg';
-      seg.style.top=y1+'px'; seg.style.height=Math.max(2,y2-y1)+'px';
+      setVisibleFill(seg,y1,y2,bar);
       seg.style.background=apal[0];
       seg.dataset.tip=from===to?'已学知识点':`已学知识点 ${to-from+1} 个`;
       seg.dataset.sub=from===to
@@ -2045,6 +2072,7 @@ function paintBar(bar, lcol, ch, labelEls, pCuts, pCuts2, aCuts, ppal, ppal2, ap
       bar.appendChild(divider);
     });
     aCuts.forEach(c=>{
+      if(c.showLessonLabel===false) return;
       if(c.upto<ch.start||c.upto>chEnd) return;
       const y1=yOf(c.upto,false), y2=yOf(c.upto,true);
       if(y1==null||y2==null) return;
@@ -2130,7 +2158,7 @@ function paintBar(bar, lcol, ch, labelEls, pCuts, pCuts2, aCuts, ppal, ppal2, ap
             if(y1!=null&&y2!=null){
               const seg=document.createElement('div');
               seg.className='act2-seg';
-              seg.style.top=y1+'px'; seg.style.height=Math.max(2,y2-y1)+'px';
+              setVisibleFill(seg,y1,y2,greenBar);
               seg.dataset.tip=`第${c.no}课（二遍）｜${c.date}`;
               greenBar.appendChild(seg); hookTip(seg); labelY=y2;
             }
@@ -2143,7 +2171,8 @@ function paintBar(bar, lcol, ch, labelEls, pCuts, pCuts2, aCuts, ppal, ppal2, ap
         const y1=yOf2(learnedTo,false), y2=yOf2(learnedTo,true);
         if(y1!=null&&y2!=null) labelY=(y1+y2)/2;
       }
-      if(lcol2){
+      const labelAnchor=c.lessonLabelAnchor??Math.max(-1,...(c.idxs||[]));
+      if(lcol2&&c.showLessonLabel!==false&&labelAnchor>=ch.start&&labelAnchor<=chEnd){
         if(labelY==null) return;
         const line=document.createElement('div');
         line.className='lesson-line';
