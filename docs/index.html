@@ -1557,8 +1557,26 @@ function renderProgress(stu, grade, inGrade){
     const ch=t.real.find(x=>anchor>=x.start&&anchor<x.start+x.len);
     return !!ch&&(firstFarByChapter.get(ch.start)??-1)>=anchor;
   };
+  const planChapterStart=c=>{
+    const idx=c.anchor??c.upto;
+    const ch=t.real.find(x=>idx>=x.start&&idx<x.start+x.len);
+    return ch?ch.start:null;
+  };
+  const secondChaptersByLesson=new Map();
+  cuts2.forEach(c=>{
+    const chapters=new Set();
+    (c.idxs||[]).forEach(i=>{
+      const ch=t.real.find(x=>i>=x.start&&i<x.start+x.len);
+      if(ch) chapters.add(ch.start);
+    });
+    secondChaptersByLesson.set(Number(c.no),chapters);
+  });
   const effectivePlanRound=c=>{
     if(state.stage==='fall'||c.round===2) return 2;
+    // 同课次的实际学习已经回到同一章进入二遍时，计划课次也必须进入二遍。
+    // 只搬动同课次、同章节的计划，不把后续计划整体搬走。
+    const chStart=planChapterStart(c);
+    if(chStart!=null&&secondChaptersByLesson.get(Number(c.no))?.has(chStart)) return 2;
     return Number(c.no)>=actualSecondStartNo&&firstReachedPlanCut(c)?2:1;
   };
 
@@ -1728,18 +1746,9 @@ function renderProgress(stu, grade, inGrade){
     const paceCuts=[...paceCutsByNo.values()].sort((a,b)=>a.no-b.no);
     // 截至实际第N课，累计比较计划第1～N课；测学与必学统一计入应完成内容。
     const expectedNames=new Set();
+    // 快慢计算只认真实学习记录。进度条为了视觉连续而补齐的中间区域，
+    // 不能当作真实已学，也不能拿计划后的提前内容抵扣计划内欠账。
     const actualPlanNames=new Set(historicalPlanNames);
-    const historicalCoveredPlanNames=new Set(historicalPlanNames);
-    const addCoveredRange=(range, historical=false)=>{
-      for(let i=range.from;i<=range.upto;i++){
-        const n=t.rows[i]&&t.rows[i].m;
-        if(!n||!planCounted(P,n,t)) continue;
-        actualPlanNames.add(n);
-        if(historical) historicalCoveredPlanNames.add(n);
-      }
-    };
-    // 与进度条填色口径一致：第1次课之前已经连续覆盖的规划区域也视为已完成。
-    (aCuts.fillRanges||[]).filter(r=>r.historical).forEach(r=>addCoveredRange(r,true));
     let expectedThrough=0;
     paceCuts.forEach(c=>{
       const pk=c.no;
@@ -1752,21 +1761,19 @@ function renderProgress(stu, grade, inGrade){
         const n=t.rows[i]&&t.rows[i].m;
         if(n&&planCounted(P,n,t)) actualPlanNames.add(n);
       });
-      // 当天一遍与二遍的连续填色区域均计入已完成，不能只认有单独记录的题模。
-      (aCuts.fillRanges||[]).filter(r=>!r.historical&&r.date===c.date).forEach(r=>addCoveredRange(r));
-      cuts2.filter(x=>x.date===c.date).forEach(x=>(x.ranges||[]).forEach(r=>addCoveredRange(r)));
       const effectiveExpected=expectedNames;
       const missing=[...effectiveExpected].filter(n=>!actualPlanNames.has(n));
       const ahead=[...actualPlanNames].filter(n=>!effectiveExpected.has(n));
       const missingMin=missing.reduce((sum,n)=>sum+(Number(P.dur[n])||0),0);
       const aheadMin=ahead.reduce((sum,n)=>sum+(Number(P.dur[n])||0),0);
-      const delta=Math.round(missingMin-aheadMin);
-      const slow=delta>0, mins=Math.abs(delta);
+      // 有应学未学时，慢的时长就是未学模时长之和，不允许提前内容抵扣。
+      // 只有应学内容全部完成后，才用额外完成内容判断是否提前。
+      const slow=missingMin>0;
+      const mins=Math.round(slow?missingMin:aheadMin);
       lastPaceInfo={slow, mins};
       if(mins<12){ paceHtmlByNo[c.no]=''; return; }
       const hrs=(mins/60).toFixed(1);
-      const historicalAhead=ahead.filter(n=>historicalCoveredPlanNames.has(n)).length;
-      paceHtmlByNo[c.no]=`<span class="pace-badge ${slow?'slow':'fast'}" title="实际第${c.no}课固定对应计划第${pk}课；计划内未完成 ${missing.length} 个、提前完成 ${ahead.length} 个（其中开课前已完成 ${historicalAhead} 个）；测学与必学统一计入，折算相差 ${mins}min">${slow?'慢':'快'} ${hrs}h</span>`;
+      paceHtmlByNo[c.no]=`<span class="pace-badge ${slow?'slow':'fast'}" title="实际第${c.no}课固定对应计划第${pk}课；计划内未完成 ${missing.length} 个、额外完成 ${ahead.length} 个；仅按真实学习记录计算，折算相差 ${mins}min">${slow?'慢':'快'} ${hrs}h</span>`;
     });
   }
   // 计划课次数量严格取规划表。实际已经上到第 N 课时：
@@ -2200,12 +2207,18 @@ function paintBar(bar, lcol, ch, labelEls, pCuts, pCuts2, aCuts, ppal, ppal2, ap
       const chapterDone=chapterRequired.length>0 && chapterRequired.every(i=>seenSecond.has(i));
       // 二遍在本章内从章首累计到最远位置；必学/测学全完成后补满整章。
       const target=chapterDone ? chEnd : Math.max(prevFar2,learnedTo);
+      const actualRanges=(c.ranges||[])
+        .filter(r=>r.upto>=ch.start&&r.from<=chEnd)
+        .map(r=>({from:Math.max(r.from,ch.start),upto:Math.min(r.upto,chEnd)}));
       let labelY=null;
       if(target>prevFar2){
         const from=prevFar2>=ch.start ? prevFar2+1 : ch.start;
         let runStart=null;
         for(let i=from;i<=target+1;i++){
-          const blocked=i<=target&&noFill2.has(i);
+          // 规划斜线只能阻止没有实际学习的区域。当天真实二遍学习的连续范围
+          // 必须优先填色，不能因为计划课次暂时落在另一遍而被隐藏。
+          const actuallyLearned=i<=target&&actualRanges.some(r=>i>=r.from&&i<=r.upto);
+          const blocked=i<=target&&noFill2.has(i)&&!actuallyLearned;
           if(i<=target&&!blocked&&runStart==null) runStart=i;
           if(runStart!=null&&(i>target||blocked)){
             const runEnd=i-1;
