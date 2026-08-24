@@ -1,0 +1,32 @@
+{
+  "students": ["丁俊懿", "曹楚涵"],
+  "records": [
+    {"lesson": 6, "date": "2026-07-30", "chapter": "第三章 代数式", "section": "3.1 列代数式表示数量关系", "module": "判断下列式子哪些是代数式", "planType": "必学", "durationMin": 10, "pass": "过关"},
+    {"lesson": 6, "date": "2026-07-30", "chapter": "第三章 代数式", "section": "3.1 列代数式表示数量关系", "module": "判断代数式的书写是否正确", "planType": "必学", "durationMin": 10, "pass": "过关"},
+    {"lesson": 6, "date": "2026-07-30", "chapter": "第三章 代数式", "section": "3.1 列代数式表示数量关系", "module": "判断代数式的读法是否正确", "planType": "必学", "durationMin": 11, "pass": "过关"},
+    {"lesson": 6, "date": "2026-07-30", "chapter": "第三章 代数式", "section": "3.1 列代数式表示数量关系", "module": "根据题意列代数式（和差倍分）", "planType": "必学", "durationMin": 5, "pass": "过关"},
+    {"lesson": 7, "date": "2026-07-31", "chapter": "第三章 代数式", "section": "3.1 列代数式表示数量关系", "module": "根据题意列代数式（实际问题）", "planType": "必学", "durationMin": 18, "pass": "过关"},
+    {"lesson": 7, "date": "2026-07-31", "chapter": "第三章 代数式", "section": "3.1 列代数式表示数量关系", "module": "代数式的实际意义", "planType": "必学", "durationMin": 2, "pass": "过关"},
+    {"lesson": 7, "date": "2026-07-31", "chapter": "第三章 代数式", "section": "3.1 列代数式表示数量关系", "module": "判断代数式的反比例关系", "planType": "必学", "durationMin": 5, "pass": "过关"},
+    {"lesson": 7, "date": "2026-07-31", "chapter": "第三章 代数式", "section": "3.2 代数式的值", "module": "代数式的值（不需要化简，直接代入字母求值）", "planType": "必学", "durationMin": 8, "pass": "过关"},
+    {"lesson": 7, "date": "2026-07-31", "chapter": "第四章 整式的加减", "section": "4.1 整式", "module": "判断下列式子哪些是单项式", "planType": "必学", "durationMin": 15, "pass": "过关"},
+    {"lesson": 7, "date": "2026-07-31", "chapter": "第四章 整式的加减", "section": "4.1 整式", "module": "单项式的系数和次数", "planType": "必学", "durationMin": 13, "pass": "过关"},
+    {"lesson": 7, "date": "2026-07-31", "chapter": "第四章 整式的加减", "section": "4.1 整式", "module": "根据条件写一个单项式", "planType": "必学", "durationMin": 2, "pass": "过关"},
+    {"lesson": 7, "date": "2026-07-31", "chapter": "第四章 整式的加减", "section": "4.1 整式", "module": "判断是否为多项式", "planType": "必学", "durationMin": 6, "pass": "过关"},
+    {"lesson": 7, "date": "2026-07-31", "chapter": "第四章 整式的加减", "section": "4.1 整式", "module": "多项式的项", "planType": "必学", "durationMin": 7, "pass": "过关"},
+    {"lesson": 7, "date": "2026-07-31", "chapter": "第四章 整式的加减", "section": "4.1 整式", "module": "多项式的次数", "planType": "必学", "durationMin": 4, "pass": "过关"},
+    {"lesson": 7, "date": "2026-07-31", "chapter": "第四章 整式的加减", "section": "4.1 整式", "module": "判断是几次几项式", "planType": "必学", "durationMin": 10, "pass": "过关"},
+    {"lesson": 7, "date": "2026-07-31", "chapter": "第四章 整式的加减", "section": "4.1 整式", "module": "判断是否为整式", "planType": "必学", "durationMin": 6, "pass": "过关"},
+    {"lesson": 8, "date": "2026-08-01", "chapter": "第四章 整式的加减", "section": "4.2 整式的加法与减法", "module": "判断是否为同类项", "planType": "必学", "durationMin": 13, "pass": "过关"},
+    {"lesson": 8, "date": "2026-08-01", "chapter": "第四章 整式的加减", "section": "4.2 整式的加法与减法", "module": "两个单项式的合并同类项", "planType": "必学", "durationMin": 13, "pass": "过关"},
+    {"lesson": 8, "date": "2026-08-01", "chapter": "第四章 整式的加减", "section": "4.2 整式的加法与减法", "module": "多个单项式的合并同类项", "planType": "必学", "durationMin": 8, "pass": "过关"},
+    {"lesson": 8, "date": "2026-08-01", "chapter": "第四章 整式的加减", "section": "4.2 整式的加法与减法", "module": "括号前符号为正不带系数", "planType": "必学", "durationMin": 2, "pass": "过关"},
+    {"lesson": 8, "date": "2026-08-01", "chapter": "第四章 整式的加减", "section": "4.2 整式的加法与减法", "module": "括号前符号为负不带系数", "planType": "必学", "durationMin": 8, "pass": "过关"},
+    {"lesson": 8, "date": "2026-08-01", "chapter": "第四章 整式的加减", "section": "4.2 整式的加法与减法", "module": "括号前符号为正且带有系数", "planType": "必学", "durationMin": 8, "pass": "过关"},
+    {"lesson": 8, "date": "2026-08-01", "chapter": "第四章 整式的加减", "section": "4.2 整式的加法与减法", "module": "括号前符号为负且带有系数", "planType": "必学", "durationMin": 13, "pass": "过关"},
+    {"lesson": 8, "date": "2026-08-01", "chapter": "第四章 整式的加减", "section": "4.2 整式的加法与减法", "module": "带有中括号及大括号", "planType": "必学", "durationMin": 4, "pass": "过关"},
+    {"lesson": 8, "date": "2026-08-01", "chapter": "第四章 整式的加减", "section": "4.2 整式的加法与减法", "module": "仅有小括号的整式加减计算", "planType": "必学", "durationMin": 7, "pass": "过关"},
+    {"lesson": 8, "date": "2026-08-01", "chapter": "第四章 整式的加减", "section": "4.2 整式的加法与减法", "module": "有中、大括号的整式加减计算", "planType": "必学", "durationMin": 9, "pass": "过关"},
+    {"lesson": 9, "date": "2026-08-02", "chapter": "第四章 整式的加减", "section": "4.2 整式的加法与减法", "module": "多项式加减", "planType": "必学", "durationMin": 11, "pass": "过关"}
+  ]
+}

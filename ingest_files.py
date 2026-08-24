@@ -4,7 +4,7 @@ uploads/ 文件夹 → docs/data.json 构建脚本（拖文件即更新方案）
 读取：
   uploads/ 下全部的 学生答题记录*.xlsx（兼容单张“全量学习数据表”和旧版双sheet，自动过滤数学）
   uploads/ 下全部的 学生课次明细*.csv（暑期→plans，秋季→plansFall；同名学生取文件名日期最新的）
-输出：docs/data.json（records/fullLearned/plans/plansFall/exportStart/generatedAt）
+输出：docs/data.json（records/fullLearned/plans/plansFall/tree/exportStart/generatedAt）
 依赖：pip install pandas openpyxl
 """
 import os, re, json, glob, time
@@ -12,6 +12,7 @@ import warnings; warnings.filterwarnings("ignore")
 import pandas as pd
 
 UP, OUT = "uploads", os.path.join("docs", "data.json")
+FIXED_SUPPLEMENTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixed_learning_supplements.json")
 
 # “已学”导出必须与用户上传的统计结果表保持完全相同的表头和顺序。
 STAT_HEADERS = [
@@ -23,6 +24,56 @@ STAT_HEADERS = [
     "消错题结果4","答题时间4","消错题结果5","答题时间5","是否过关","试卷答对题数",
     "试卷答错次数","外部试卷过关","外部过关来源","最近试卷名称"
 ]
+
+def load_fixed_supplements():
+    """读取人工确认的固定历史学习记录；新统计表导入时自动补回。"""
+    if not os.path.exists(FIXED_SUPPLEMENTS):
+        return {"students": [], "records": []}
+    with open(FIXED_SUPPLEMENTS, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    return {"students": [str(x).strip() for x in data.get("students", [])],
+            "records": data.get("records", [])}
+
+def apply_fixed_supplements(records, full_learned):
+    """仅给当前统计表中已存在的学生补历史数据，不凭空增加缺席学生。"""
+    cfg = load_fixed_supplements()
+    present = set(full_learned) | {r["n"] for r in records}
+    by_key = {(r["n"], r["m"]): r for r in records}
+    applied = 0
+    for stu in cfg["students"]:
+        if stu not in present:
+            continue
+        for item in cfg["records"]:
+            mod, date = str(item.get("module", "")).strip(), nd(item.get("date"))
+            if not mod or not date:
+                continue
+            key = (stu, mod)
+            r = by_key.get(key)
+            if r is None:
+                src = {h: "" for h in STAT_HEADERS}
+                src.update({"学生名称": stu, "学科": "初中数学", "题模名称": mod,
+                            "新知学日期1": date, "是否过关": "过关"})
+                r = {"n": stu, "m": mod, "p": 1, "dt": date, "pre": "/",
+                     "acts": [date], "studyActs": [date], "newActs": [date],
+                     "reinforceActs": [], "testActs": [], "src": src}
+                records.append(r)
+                by_key[key] = r
+            else:
+                r["p"] = 1
+                r["newActs"] = sorted(set(r.get("newActs", [])) | {date})
+                r["studyActs"] = sorted(set(r.get("studyActs", [])) | {date})
+                r["acts"] = sorted(set(r.get("acts", [])) | {date})
+                r["dt"] = max([d for d in [r.get("dt"), *r["acts"]] if d], default=date)
+                src = r.setdefault("src", {h: "" for h in STAT_HEADERS})
+                src["是否过关"] = "过关"
+                days = sorted({d for d in [date, *(nd(src.get(f"新知学日期{i}")) for i in range(1, 4))] if d})
+                for i in range(1, 4):
+                    src[f"新知学日期{i}"] = days[i-1] if i <= len(days) else ""
+            full_learned[stu] = sorted(set(full_learned.get(stu, [])) | {mod})
+            applied += 1
+    if applied:
+        print(f"固定历史补录：{len([s for s in cfg['students'] if s in present])}人 × {len(cfg['records'])}个题模，共{applied}条")
+    return records, full_learned
 
 def json_value(v):
     if pd.isna(v):
@@ -141,7 +192,7 @@ def build_records():
             fl_by_stu[s] = sorted(set(fl_by_stu.get(s, [])) | set(mods))
     # 保留合并后的全部活动。每位学生的“第1次课日期”由网页端手动设置，
     # 该日期只决定课次编号起点；更早活动仍作为历史已学数据参与进度判断。
-    return list(by_key.values()), fl_by_stu
+    return apply_fixed_supplements(list(by_key.values()), fl_by_stu)
 
 def build_plans():
     plans, plans_fall, stamp = {}, {}, {}
@@ -184,32 +235,17 @@ def main():
     plans, plans_fall = build_plans()
     recs, fl = build_records()
     dts = sorted(r["dt"] for r in recs if r["dt"])
+    tree_path = os.path.join("docs", "tree.json")
+    with open(tree_path, "r", encoding="utf-8") as f:
+        tree = json.load(f)
     out = {"records": recs, "fullLearned": fl,
            "plans": plans, "plansFall": plans_fall,
+           "tree": tree,
            "exportStart": dts[0] if dts else None,
            "generatedAt": time.strftime("%Y-%m-%d %H:%M:%S")}
     os.makedirs("docs", exist_ok=True)
     with open(OUT, "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False, separators=(",", ":"))
-    # file:// 本地预览无法稳定 fetch data.json，因此同步更新 HTML 内嵌数据。
-    index_path = os.path.join("docs", "index.html")
-    if os.path.exists(index_path):
-        with open(index_path, "r", encoding="utf-8") as f:
-            html = f.read()
-        old_match = re.search(r'<script id="EMBED_DATA" type="application/json">(.*?)</script>', html, re.S)
-        old_payload = json.loads(old_match.group(1)) if old_match else {}
-        embedded_out = dict(out)
-        # 知识树只存于单文件网页中，更新学习数据时必须原样保留。
-        if old_payload.get("tree"):
-            embedded_out["tree"] = old_payload["tree"]
-        payload = json.dumps(embedded_out, ensure_ascii=False, separators=(",", ":"))
-        html, n = re.subn(r'(<script id="EMBED_DATA" type="application/json">).*?(</script>)',
-                          lambda m: m.group(1) + payload + m.group(2), html,
-                          count=1, flags=re.S)
-        if n != 1:
-            raise ValueError("docs/index.html 中未找到唯一的 EMBED_DATA")
-        with open(index_path, "w", encoding="utf-8") as f:
-            f.write(html)
     print(f"OK → {OUT}: 记录{len(recs)}条({out['exportStart']}→{dts[-1] if dts else '-'})，"
           f"暑期规划{len(plans)}人，秋季规划{len(plans_fall)}人")
 
