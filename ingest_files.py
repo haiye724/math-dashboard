@@ -216,9 +216,13 @@ def build_plans():
                     continue
                 stamp[key] = fdate(path)
                 lessons, dur, types, renum = [], {}, {}, 0
-                for (sub, no, date), gg in sorted(g.groupby(["sub", "no", "上课日期"])):
+                # 规划课次数量严格取“课次”列。同一个计划课可能因内容跨日而出现
+                # 多个上课日期，不能按“课次+日期”拆成新的计划课。
+                for (sub, no), gg in sorted(g.groupby(["sub", "no"])):
                     renum += 1
-                    lessons.append({"no": renum, "date": nd(date),
+                    lesson_dates = sorted({nd(x) for x in gg["上课日期"] if nd(x)})
+                    date = lesson_dates[0] if lesson_dates else None
+                    lessons.append({"no": renum, "date": date,
                                     "names": [str(x).strip() for x in gg["题模名称"]],
                                     "stage": ("期末前" if sub else "期中前") if stage_key == "秋季" else "暑期"})
                     for _, r in gg.iterrows():
