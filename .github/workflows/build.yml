@@ -4,6 +4,7 @@ on:
     paths:
       - "uploads/**"           # 往 uploads/ 传文件即自动构建
       - "ingest_files.py"      # 数据解析规则更新后也自动重建
+      - "fixed_learning_supplements.json"
       - ".github/workflows/build.yml"
   workflow_dispatch:
 permissions:
