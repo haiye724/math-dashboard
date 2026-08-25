@@ -129,12 +129,12 @@ def parse_one(f):
             ce = str(r.get(f"消错题结果{i}", "")).strip()
             if not ce or ce in ("/", "nan"):
                 ans_ok.append(d)                      # 非消错作答（二遍学判定）
-        # 前测日期：答对的计入（判会时点）；答错的仅当当天另有学习活动或再无其他日期时计入
+        # 前测是一次正式学习活动：无论答对或答错，都计入已学和进度。
+        # 消错题仍不进入 base，因此不会被当作学习题模。
         base = explicit_study | set(ans_ok)
         pre_d = nd(r.get("前测日期"))
-        pre_ok = str(r.get("前测是否答对", "")).strip() == "答对"
         test_days = set()
-        if pre_d and (pre_ok or pre_d in base or not (base or ans_all)):
+        if pre_d:
             base.add(pre_d)
             test_days.add(pre_d)
         # 用于区分一遍学习的性质：新知学=预习，巩固学/前测=提升。
