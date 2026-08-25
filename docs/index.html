@@ -1562,7 +1562,6 @@ function renderProgress(stu, grade, inGrade){
   // 这既能让郭宸祎已完成的一遍计划进入二遍，也不会因杨婧美偶尔回头复习而误搬后续计划。
   const stagePlanCuts=planCuts(stu,grade,state.stage);
   const actualLearnedSet=new Set(aCuts.learnedIdx||[]);
-  const actualSecondStartNo=cuts2.length?Math.min(...cuts2.map(c=>c.no)):Infinity;
   const firstFarByChapter=new Map(t.real.map(ch=>{
     const xs=[...actualLearnedSet].filter(i=>i>=ch.start&&i<ch.start+ch.len);
     return [ch.start,xs.length?Math.max(...xs):-1];
@@ -1579,22 +1578,21 @@ function renderProgress(stu, grade, inGrade){
     const ch=t.real.find(x=>idx>=x.start&&idx<x.start+x.len);
     return ch?ch.start:null;
   };
-  const secondChaptersByLesson=new Map();
+  const secondChapters=new Set();
   cuts2.forEach(c=>{
-    const chapters=new Set();
     (c.idxs||[]).forEach(i=>{
       const ch=t.real.find(x=>i>=x.start&&i<x.start+x.len);
-      if(ch) chapters.add(ch.start);
+      if(ch) secondChapters.add(ch.start);
     });
-    secondChaptersByLesson.set(Number(c.no),chapters);
   });
   const effectivePlanRound=c=>{
     if(state.stage==='fall'||c.round===2) return 2;
-    // 同课次的实际学习已经回到同一章进入二遍时，计划课次也必须进入二遍。
-    // 只搬动同课次、同章节的计划，不把后续计划整体搬走。
+    // 该章已经完成过一遍、且实际重新进入二遍后，已被一遍覆盖的计划课
+    // 必须跟随本章的二遍进度条显示。不能用“实际二遍从第几课开始”作门槛，
+    // 否则计划第 6、9 课会被错误留在一遍栏。
     const chStart=planChapterStart(c);
-    if(chStart!=null&&secondChaptersByLesson.get(Number(c.no))?.has(chStart)) return 2;
-    return Number(c.no)>=actualSecondStartNo&&firstReachedPlanCut(c)?2:1;
+    if(chStart!=null&&secondChapters.has(chStart)&&firstReachedPlanCut(c)) return 2;
+    return 1;
   };
 
   {
@@ -1838,8 +1836,11 @@ function renderProgress(stu, grade, inGrade){
   };
   const latestActualNo=Math.max(0,...aCuts.map(c=>Number(c.no)||0),...cuts2.map(c=>Number(c.no)||0));
   const isCurrentOrFuturePlanCut=c=>(Number(c.no)||0)>=latestActualNo;
-  const planTags=pCuts.filter(c=>isCurrentOrFuturePlanCut(c)&&!planCutDone(c,firstCovered));
-  const planTags2=pCuts2.filter(c=>isCurrentOrFuturePlanCut(c)&&!planCutDone(c,secondCovered));
+  // 计划课只要其题模已在任一遍实际学过，就不再显示“计划第 N 课”。
+  // 计划所在栏决定呈现位置，不应让一遍/二遍的分栏导致已学计划重新冒出来。
+  const allCovered=new Set([...firstCovered,...secondCovered]);
+  const planTags=pCuts.filter(c=>isCurrentOrFuturePlanCut(c)&&!planCutDone(c,allCovered));
+  const planTags2=pCuts2.filter(c=>isCurrentOrFuturePlanCut(c)&&!planCutDone(c,allCovered));
 
   const paintJobs=[];
 
@@ -2224,10 +2225,16 @@ function paintBar(bar, lcol, ch, labelEls, pCuts, pCuts2, aCuts, ppal, ppal2, ap
       lcol.appendChild(line);
     });
     // 第1次课之前的学习仍标注日期，但不能占用或生成本阶段课次编号。
+    // 同一个历史日期可能跨越多个章节；只在该日期全局最靠后的进度位置标一次。
+    const historyLatestByDate=new Map();
+    (aCuts.fillRanges||[]).filter(r=>r.historical&&r.date).forEach(r=>{
+      historyLatestByDate.set(r.date,Math.max(historyLatestByDate.get(r.date)??-1,r.upto));
+    });
     const historyDates=new Set();
     (aCuts.fillRanges||[]).filter(r=>
       r.historical && r.date && r.upto>=ch.start && r.from<=chEnd
     ).forEach(r=>{
+      if(historyLatestByDate.get(r.date)!==r.upto) return;
       if(historyDates.has(r.date)) return;
       historyDates.add(r.date);
       const anchor=Math.min(r.upto,chEnd);
@@ -2317,8 +2324,10 @@ function paintBar(bar, lcol, ch, labelEls, pCuts, pCuts2, aCuts, ppal, ppal2, ap
         if(y1!=null&&y2!=null) labelY=(y1+y2)/2;
       }
       const labelAnchor=c.lessonLabelAnchor??Math.max(-1,...(c.idxs||[]));
-      if(lcol2&&labelY!=null){
-        const showCourseNo=c.showLessonLabel!==false&&labelAnchor>=ch.start&&labelAnchor<=chEnd;
+      // 同一日期即使跨章或同时含一、二遍内容，也只在当天最靠后的题模位置显示一次。
+      // 若该日期的完整课次已分配给一遍栏，二遍栏不再追加一个纯日期标签。
+      if(lcol2&&labelY!=null&&c.showLessonLabel!==false&&labelAnchor>=ch.start&&labelAnchor<=chEnd){
+        const showCourseNo=true;
         const line=document.createElement('div');
         line.className='lesson-line';
         line.style.top=labelY+'px';

@@ -23,6 +23,7 @@
     <label>统计阶段</label><div class="seg"><button id="summer" class="on">暑假</button><button id="fall">秋季</button></div>
     <input class="search" id="search" placeholder="搜索题模、章节或专题…">
     <button class="export" id="export" type="button">导出暑假</button>
+    <button class="export" id="exportAll" type="button">导出全量</button>
     <span class="sync" id="sync"></span>
   </div>
   <div class="summary">
@@ -59,8 +60,8 @@ function gradeOf(stu){const p=DATA.plans?.[stu]||DATA.plansFall?.[stu],cnt={};fo
 function planCounted(P,n,t){return !SKIP.has(P?.types?.[n])&&t.byName.has(n)}
 function studySets(stu,start){const current=new Set(),prior=new Set(),names=new Set();for(const r of DATA.records||[]){if(r.n!==stu)continue;names.add(r.m);const ds=days(r);if(ds.some(d=>d>=start))current.add(r.m);if(ds.some(d=>d<start))prior.add(r.m)}for(const n of DATA.fullLearned?.[stu]||[])if(!names.has(n))prior.add(n);return{current,prior}}
 function rowPlace(t,name){const i=t.byName.get(name),r=i===undefined?{}:t.rows[i]||{};return{idx:i??99999,chapter:String(r.c||'').replace(/☽/g,''),section:String(r.s||'').replace(/☽/g,'')}}
-function compute(){const stu=state.student,grade=gradeOf(stu),t=TREES[grade],start=state.stage==='fall'?fallDate(stu):firstDate(stu),end=state.stage==='summer'&&DATA.plansFall?.[stu]?fallDate(stu):null,inStage=d=>d&&d>=start&&(!end||d<end);const learned=[];for(const r of DATA.records||[]){if(r.n!==stu)continue;const ds=days(r).filter(inStage).sort();if(!ds.length)continue;const p=rowPlace(t,r.m);learned.push({...p,module:r.m,pass:!!r.p,pre:r.pre||'',dates:ds.join('、'),sort:ds[0],record:r})}learned.sort((a,b)=>a.sort.localeCompare(b.sort)||a.idx-b.idx);
-  const P=state.stage==='fall'?DATA.plansFall?.[stu]:DATA.plans?.[stu],unlearned=[];if(P){const {current,prior}=studySets(stu,start),lm=new Map();(P.lessons||[]).forEach((L,i)=>(L.names||[]).forEach(n=>{const a=lm.get(n)||[];a.push({no:Number(L.no)||i+1,date:L.date||''});lm.set(n,a)}));for(const n of Object.keys(P.dur||{})){if(!planCounted(P,n,t)||current.has(n)||prior.has(n))continue;const p=rowPlace(t,n),ls=lm.get(n)||[];unlearned.push({...p,module:n,type:P.types[n]||'',dur:Number(P.dur[n])||0,lesson:ls.map(x=>`第${x.no}课`).join('、'),date:[...new Set(ls.map(x=>x.date).filter(Boolean))].join('、'),sort:ls[0]?.no||9999})}unlearned.sort((a,b)=>a.sort-b.sort||a.idx-b.idx)}return{grade,start,end,learned,unlearned,hasPlan:!!P}}
+function compute(stage=state.stage){const stu=state.student,grade=gradeOf(stu),t=TREES[grade],start=stage==='fall'?fallDate(stu):firstDate(stu),end=stage==='summer'&&DATA.plansFall?.[stu]?fallDate(stu):null,inStage=d=>d&&d>=start&&(!end||d<end);const learned=[];for(const r of DATA.records||[]){if(r.n!==stu)continue;const ds=days(r).filter(inStage).sort();if(!ds.length)continue;const p=rowPlace(t,r.m);learned.push({...p,module:r.m,pass:!!r.p,pre:r.pre||'',dates:ds.join('、'),sort:ds[0],record:r})}learned.sort((a,b)=>a.sort.localeCompare(b.sort)||a.idx-b.idx);
+  const P=stage==='fall'?DATA.plansFall?.[stu]:DATA.plans?.[stu],unlearned=[];if(P){const {current,prior}=studySets(stu,start),lm=new Map();(P.lessons||[]).forEach((L,i)=>(L.names||[]).forEach(n=>{const a=lm.get(n)||[];a.push({no:Number(L.no)||i+1,date:L.date||''});lm.set(n,a)}));for(const n of Object.keys(P.dur||{})){if(!planCounted(P,n,t)||current.has(n)||prior.has(n))continue;const p=rowPlace(t,n),ls=lm.get(n)||[];unlearned.push({...p,module:n,type:P.types[n]||'',dur:Number(P.dur[n])||0,lesson:ls.map(x=>`第${x.no}课`).join('、'),date:[...new Set(ls.map(x=>x.date).filter(Boolean))].join('、'),sort:ls[0]?.no||9999})}unlearned.sort((a,b)=>a.sort-b.sort||a.idx-b.idx)}return{grade,start,end,learned,unlearned,hasPlan:!!P}}
 function filter(rows){const k=state.search.trim().toLowerCase();return k?rows.filter(r=>[r.module,r.chapter,r.section,r.lesson,r.date].some(x=>String(x||'').toLowerCase().includes(k))):rows}
 function render(){const x=compute();$('studentName').textContent=state.student;$('learnedCount').textContent=x.learned.length;$('unlearnedCount').textContent=x.hasPlan?x.unlearned.length:'—';$('summer').classList.toggle('on',state.stage==='summer');$('fall').classList.toggle('on',state.stage==='fall');$('tabLearned').classList.toggle('on',state.tab==='learned');$('tabUnlearned').classList.toggle('on',state.tab==='unlearned');$('tabLearned').textContent=`已学 ${x.learned.length}`;$('tabUnlearned').textContent=`未学 ${x.hasPlan?x.unlearned.length:'—'}`;$('export').textContent=state.stage==='fall'?'导出秋季':'导出暑假';$('export').disabled=!x.hasPlan;
   const rows=filter(state.tab==='learned'?x.learned:x.unlearned);if(state.tab==='unlearned'&&!x.hasPlan){$('content').innerHTML='<div class="empty">该学生尚未导入当前阶段规划，无法计算未学题模。</div>';return}if(!rows.length){$('content').innerHTML='<div class="empty">当前条件下没有数据。</div>';return}
@@ -70,10 +71,46 @@ function ensureXLSX(){if(XLSXlib)return Promise.resolve(XLSXlib);if(window.XLSX)
 function normDate(v){const s=String(v??'').trim();let m=s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);if(m)return `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);if(m)return `${m[3].length===2?'20'+m[3]:m[3]}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`;return ''}
 function learnedValues(item,start,end){const r=item.record||{},src={...(r.src||{})},inStage=d=>d&&d>=start&&(!end||d<end);src['学生名称']??=r.n||state.student;src['学科']??='初中数学';src['题模名称']??=r.m||item.module;src['前测是否答对']??=r.pre||'';src['是否过关']??=r.p?'过关':'未过关';if(!r.src){const test=(r.testActs||[]).filter(inStage),nw=(r.newActs||[]).filter(inStage),rein=(r.reinforceActs||[]).filter(inStage);src['前测日期']=test[0]||'';nw.slice(0,3).forEach((d,i)=>src[`新知学日期${i+1}`]=d);rein.slice(0,3).forEach((d,i)=>src[`巩固学日期${i+1}`]=d)}const clear=(dateKey,related)=>{const d=normDate(src[dateKey]);if(d&&inStage(d))return;[dateKey,...related].forEach(k=>src[k]='')};clear('前测日期',['前测是否答对']);for(let i=1;i<=3;i++){clear(`新知学日期${i}`,[`新知学正确率${i}`,`新知学结果${i}`]);clear(`巩固学日期${i}`,[`巩固学正确率${i}`,`巩固学结果${i}`])}for(let i=1;i<=5;i++)clear(`答题时间${i}`,[`消错题结果${i}`]);return STAT_HEADERS.map(h=>src[h]??'')}
 function exportCurrent(){const x=compute(),stu=state.student,stageLabel=state.stage==='fall'?'秋季':'暑假';if(!x.hasPlan){alert(`${stu}尚未导入${stageLabel}规划，无法导出`);return}const learnedRows=x.learned.map(r=>learnedValues(r,x.start,x.end));const unHeaders=['学生','阶段','年级','计划课次','计划日期','章节','章/节/专题','题模名称','规划类型','计划时长(min)'];const unRows=x.unlearned.map(r=>[stu,stageLabel,x.grade,r.lesson,r.date,r.chapter,r.section,r.module,r.type,r.dur]);const learnedAoa=[[`${stu}${stageLabel}已学数据`],['统计阶段',stageLabel,'第1次课日期',x.start,'阶段结束日期',x.end||'','已学题模数',learnedRows.length],[],STAT_HEADERS,...learnedRows];const unAoa=[[`${stu}${stageLabel}未学题模清单`],['统计阶段',stageLabel,'第1次课日期',x.start,'未学题模数',unRows.length],[],unHeaders,...unRows];const btn=$('export'),old=btn.textContent;btn.disabled=true;btn.textContent='正在导出…';ensureXLSX().then(X=>{const a=X.utils.aoa_to_sheet(learnedAoa),b=X.utils.aoa_to_sheet(unAoa);a['!cols']=STAT_HEADERS.map(h=>({wch:h==='题模名称'?48:(h.includes('日期')||h.includes('时间')?16:14)}));a['!autofilter']={ref:`A4:AP${learnedAoa.length}`};b['!cols']=[10,8,8,14,14,24,30,48,12,16].map(w=>({wch:w}));b['!autofilter']={ref:`A4:J${unAoa.length}`};const wb=X.utils.book_new();X.utils.book_append_sheet(wb,a,'已学');X.utils.book_append_sheet(wb,b,'未学');const safe=s=>String(s).replace(/[\\/:*?"<>|]/g,'_');X.writeFile(wb,`${safe(stu)}_${stageLabel}学情_${new Date().toISOString().slice(0,10)}.xlsx`,{compression:true})}).catch(e=>alert(e.message||'导出失败')).finally(()=>{btn.disabled=false;btn.textContent=old})}
+/* 全量导出不按阶段截断已学数据；未学则分别列出暑假、秋季规划中尚未学习的题模。 */
+function exportAll(){
+  const stu=state.student,grade=gradeOf(stu);
+  const rawRecords=(DATA.records||[]).filter(r=>r.n===stu);
+  const learnedRows=rawRecords.map(r=>learnedValues({record:r,module:r.m},'0000-01-01',null));
+  const unHeaders=['学生','阶段','年级','计划课次','计划日期','章节','章/节/专题','题模名称','规划类型','计划时长(min)'];
+  // 同一题模可能同时出现在暑假、秋季规划；全量未学清单按题模只保留一行，
+  // 并把两个阶段的计划信息合并在该行中。
+  const unlearnedByModule=new Map();
+  [['summer','暑假'],['fall','秋季']].forEach(([stage,label])=>{
+    const x=compute(stage);
+    x.unlearned.forEach(r=>{
+      const old=unlearnedByModule.get(r.module);
+      const detail={label,lesson:r.lesson,date:r.date,type:r.type,dur:r.dur};
+      if(old){old.details.push(detail);return}
+      unlearnedByModule.set(r.module,{...r,details:[detail]});
+    });
+  });
+  const unRows=[...unlearnedByModule.values()].map(r=>{
+    const one=r.details.length===1,join=k=>r.details.map(d=>one?d[k]:`${d.label}：${d[k]||'—'}`).join('；');
+    return [stu,r.details.map(d=>d.label).join('、'),grade,join('lesson'),join('date'),r.chapter,r.section,r.module,join('type'),join('dur')];
+  });
+  const learnedAoa=[[`${stu}全量已学数据`],['统计范围','全量（不按暑假/秋季截断）','已学统计记录数',learnedRows.length],[],STAT_HEADERS,...learnedRows];
+  const unAoa=[[`${stu}全量未学题模清单`],['统计范围','暑假 + 秋季','未学题模数',unRows.length],[],unHeaders,...unRows];
+  const btn=$('exportAll'),old=btn.textContent;btn.disabled=true;btn.textContent='正在导出…';
+  ensureXLSX().then(X=>{
+    const a=X.utils.aoa_to_sheet(learnedAoa),b=X.utils.aoa_to_sheet(unAoa);
+    a['!cols']=STAT_HEADERS.map(h=>({wch:h==='题模名称'?48:(h.includes('日期')||h.includes('时间')?16:14)}));
+    a['!autofilter']={ref:`A4:AP${learnedAoa.length}`};
+    b['!cols']=[10,8,8,14,14,24,30,48,12,16].map(w=>({wch:w}));
+    b['!autofilter']={ref:`A4:J${unAoa.length}`};
+    const wb=X.utils.book_new();X.utils.book_append_sheet(wb,a,'已学');X.utils.book_append_sheet(wb,b,'未学');
+    const safe=s=>String(s).replace(/[\\/:*?"<>|]/g,'_');
+    X.writeFile(wb,`${safe(stu)}_全量学情_${new Date().toISOString().slice(0,10)}.xlsx`,{compression:true});
+  }).catch(e=>alert(e.message||'导出失败')).finally(()=>{btn.disabled=false;btn.textContent=old});
+}
 function initData(data){if(DATA)return;DATA=data;makeTrees();const students=[...new Set((DATA.records||[]).map(r=>r.n))].sort((a,b)=>a.localeCompare(b,'zh'));$('student').innerHTML=students.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');state.student=students.includes(param().get('student'))?param().get('student'):students[0]||'';state.stage=param().get('stage')==='fall'?'fall':'summer';$('student').value=state.student;$('sync').textContent=DATA.generatedAt?`数据更新：${DATA.generatedAt}`:'';render()}
 async function load(){try{if(location.protocol!=='file:'){const d=await fetch('data.json?'+Date.now(),{cache:'no-store'}).then(r=>r.json());initData(d);return}if(window.parent!==window){window.parent.postMessage({type:'math-dashboard-details-ready'},'*');return}if(window.opener&&typeof window.opener.getDashboardData==='function')initData(window.opener.getDashboardData());else throw new Error('本地明细页需要从学习看板进入')}catch(e){$('content').innerHTML='<div class="empty">数据读取失败。请从原学习看板点击“查看学习明细”进入。</div>'}}
 window.addEventListener('message',e=>{if(e.data?.type==='math-dashboard-data'&&e.data.data)initData(e.data.data)});
-$('student').onchange=e=>{state.student=e.target.value;render()};$('summer').onclick=()=>{state.stage='summer';render()};$('fall').onclick=()=>{state.stage='fall';render()};$('tabLearned').onclick=()=>{state.tab='learned';render()};$('tabUnlearned').onclick=()=>{state.tab='unlearned';render()};$('search').oninput=e=>{state.search=e.target.value;render()};$('export').onclick=exportCurrent;$('back').onclick=e=>{if(window.parent!==window){e.preventDefault();window.parent.postMessage({type:'math-dashboard-details-close'},'*')}};load();
+$('student').onchange=e=>{state.student=e.target.value;render()};$('summer').onclick=()=>{state.stage='summer';render()};$('fall').onclick=()=>{state.stage='fall';render()};$('tabLearned').onclick=()=>{state.tab='learned';render()};$('tabUnlearned').onclick=()=>{state.tab='unlearned';render()};$('search').oninput=e=>{state.search=e.target.value;render()};$('export').onclick=exportCurrent;$('exportAll').onclick=exportAll;$('back').onclick=e=>{if(window.parent!==window){e.preventDefault();window.parent.postMessage({type:'math-dashboard-details-close'},'*')}};load();
 </script>
 </body>
 </html>
