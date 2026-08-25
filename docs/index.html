@@ -304,7 +304,7 @@ input[type=file]{display:none}
 }
 .vchap-head .cnt{font-size:11px;color:var(--ink-faint);font-weight:400;font-family:"PingFang SC","Microsoft YaHei",sans-serif}
 .vgrid{display:grid;grid-template-columns:1fr 56px 178px;gap:0 12px}
-.vhead.mode-both,.vgrid.mode-both{grid-template-columns:1fr 34px 128px 34px 128px}
+.vhead.mode-both,.vgrid.mode-both{grid-template-columns:1fr 46px 124px 46px 124px}
 .vbar{
   position:relative;background:#F1F4F6;border:1px solid var(--line);
   border-radius:5px;overflow:visible;align-self:stretch;
@@ -389,7 +389,7 @@ input[type=file]{display:none}
 .lesson-tag.second-plan-tag{background:#D8E9DE;color:#2F7048}
 .lesson-line{
   position:absolute;left:0;right:0;transform:translateY(-100%);
-  display:flex;align-items:flex-end;gap:4px;flex-wrap:nowrap;padding-bottom:1px;
+  display:flex;align-items:center;gap:4px;flex-wrap:nowrap;padding-bottom:1px;
 }
 .lesson-tag{
   font-size:11px;line-height:1;border-radius:5px;padding:3px 7px;white-space:nowrap;
@@ -2392,21 +2392,31 @@ function paintBar(bar, lcol, ch, labelEls, pCuts, pCuts2, aCuts, ppal, ppal2, ap
     hookTip(seg);
     bar.appendChild(seg);
   });
-  // 二遍进度条使用二遍规划单独判断“不学”，与一遍斜线互不影响。
-  labelEls.forEach(({s})=>{
-    if(!secSkipped2(s)) return;
-    const sEnd=s.start+s.len-1;
-    // 斜线只代表“既不在二遍规划、也没有二遍实际学习”的部分。
-    // 以前它在最后一层绘制，会盖住第 2 课之后已填好的绿色实际进度。
-    if(actualSecondPaintRanges.some(r=>r.from<=sEnd&&r.to>=s.start)) return;
-    const y1=yOf2(s.start,false), y2=yOf2(s.start+s.len-1,true);
-    if(y1==null||y2==null) return;
-    const seg=document.createElement('div'); seg.className='fill-seg skip2-seg';
-    seg.style.top=y1+'px'; seg.style.height=(y2-y1)+'px';
-    seg.dataset.tip=s.name.replace(/☽/g,'');
-    seg.dataset.sub='不在二遍规划范围内';
-    hookTip(seg); greenBar.appendChild(seg);
-  });
+  // 二遍进度条使用二遍规划单独判断“不学”。连续“不学”的多个节合并为一段斜线，
+  // 不再因每一节的边界出现白色横线；实际二遍学习过的节仍优先保留绿色。
+  {
+    let runStart=null,runEnd=null,runNames=[];
+    const drawSkip2=()=>{
+      if(runStart==null) return;
+      const y1=yOf2(runStart,false), y2=yOf2(runEnd,true);
+      if(y1!=null&&y2!=null){
+        const seg=document.createElement('div'); seg.className='fill-seg skip2-seg';
+        seg.style.top=y1+'px'; seg.style.height=(y2-y1)+'px';
+        seg.dataset.tip=runNames.join('、').replace(/☽/g,'');
+        seg.dataset.sub='不在二遍规划范围内';
+        hookTip(seg); greenBar.appendChild(seg);
+      }
+      runStart=null;runEnd=null;runNames=[];
+    };
+    labelEls.forEach(({s})=>{
+      const sEnd=s.start+s.len-1;
+      const hasActual=actualSecondPaintRanges.some(r=>r.from<=sEnd&&r.to>=s.start);
+      if(!secSkipped2(s)||hasActual){drawSkip2();return}
+      if(runStart==null) runStart=s.start;
+      runEnd=sEnd;runNames.push(s.name);
+    });
+    drawSkip2();
+  }
   // 最新一次实际课的位置标记：一遍显示在蓝条，二遍显示在绿条；隐藏该遍时不显示。
   const pm=aCuts.positionMarker;
   if(pm&&pm.idx>=ch.start&&pm.idx<=chEnd){
