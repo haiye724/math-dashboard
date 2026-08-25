@@ -1774,7 +1774,8 @@ function renderProgress(stu, grade, inGrade){
       (c.idxs||[]).forEach(i=>x.idxs.add(i));
     });
     const paceCuts=[...paceCutsByNo.values()].sort((a,b)=>a.no-b.no);
-    // 截至实际第N课，累计比较计划第1～N课；测学与必学统一计入应完成内容。
+    // 截至实际第 N 课，累计比较对应规划课次；实际课次超过暑假规划时，
+    // 继续以暑假规划全部内容为应完成范围，不能停止快慢计算。
     const expectedNames=new Set();
     // 快慢计算只认真实学习记录。进度条为了视觉连续而补齐的中间区域，
     // 不能当作真实已学，也不能拿计划后的提前内容抵扣计划内欠账。
@@ -1782,8 +1783,9 @@ function renderProgress(stu, grade, inGrade){
     let expectedThrough=0;
     paceCuts.forEach(c=>{
       const pk=c.no;
-      if(pk>P.lessons.length){ paceHtmlByNo[c.no]=''; return; }
-      while(expectedThrough<pk){
+      const plannedNo=Math.min(pk,P.lessons.length);
+      if(!plannedNo){ paceHtmlByNo[c.no]=''; return; }
+      while(expectedThrough<plannedNo){
         (P.lessons[expectedThrough]?.names||[]).forEach(n=>{ if(planCounted(P,n,t)) expectedNames.add(n); });
         expectedThrough++;
       }
@@ -1803,7 +1805,10 @@ function renderProgress(stu, grade, inGrade){
       lastPaceInfo={slow, mins};
       if(mins<12){ paceHtmlByNo[c.no]=''; return; }
       const hrs=(mins/60).toFixed(1);
-      paceHtmlByNo[c.no]=`<span class="pace-badge ${slow?'slow':'fast'}" title="实际第${c.no}课固定对应计划第${pk}课；计划内未完成 ${missing.length} 个、额外完成 ${ahead.length} 个；仅按真实学习记录计算，折算相差 ${mins}min">${slow?'慢':'快'} ${hrs}h</span>`;
+      const planRef=pk>P.lessons.length
+        ? `实际第${c.no}课已超过本期规划第${P.lessons.length}课，按本期规划全部内容比较`
+        : `实际第${c.no}课对应计划第${plannedNo}课`;
+      paceHtmlByNo[c.no]=`<span class="pace-badge ${slow?'slow':'fast'}" title="${planRef}；计划内未完成 ${missing.length} 个、额外完成 ${ahead.length} 个；仅按真实学习记录计算，折算相差 ${mins}min">${slow?'慢':'快'} ${hrs}h</span>`;
     });
   }
   // 计划课次数量严格取规划表。实际已经上到第 N 课时：
@@ -2378,20 +2383,30 @@ function paintBar(bar, lcol, ch, labelEls, pCuts, pCuts2, aCuts, ppal, ppal2, ap
     });
   }
 
-  // ---- 计划外的节：灰色斜线遮罩；若被实际连续进度跨过，则保持实际色块连通 ----
-  labelEls.forEach(({s})=>{
-    if(!secSkipped(s)) return;
-    const sEnd=s.start+s.len-1;
-    if(actualPaintRanges.some(r=>r.from<=sEnd&&r.to>=s.start)) return;
-    const y1=yOf(s.start,false), y2=yOf(s.start+s.len-1,true);
-    if(y1==null||y2==null) return;
-    const seg=document.createElement('div'); seg.className='fill-seg skip-seg';
-    seg.style.top=y1+'px'; seg.style.height=(y2-y1)+'px';
-    seg.dataset.tip=s.name.replace(/☽/g,'');
-    seg.dataset.sub='不在计划范围内';
-    hookTip(seg);
-    bar.appendChild(seg);
-  });
+  // ---- 一遍不学：连续“不学”的多个节合并为一个斜线区间 ----
+  {
+    let runStart=null,runEnd=null,runNames=[];
+    const drawSkip=()=>{
+      if(runStart==null) return;
+      const y1=yOf(runStart,false), y2=yOf(runEnd,true);
+      if(y1!=null&&y2!=null){
+        const seg=document.createElement('div'); seg.className='fill-seg skip-seg';
+        seg.style.top=y1+'px'; seg.style.height=(y2-y1)+'px';
+        seg.dataset.tip=runNames.join('、').replace(/☽/g,'');
+        seg.dataset.sub='不在一遍规划范围内';
+        hookTip(seg); bar.appendChild(seg);
+      }
+      runStart=null;runEnd=null;runNames=[];
+    };
+    labelEls.forEach(({s})=>{
+      const sEnd=s.start+s.len-1;
+      const hasActual=actualPaintRanges.some(r=>r.from<=sEnd&&r.to>=s.start);
+      if(!secSkipped(s)||hasActual){drawSkip();return}
+      if(runStart==null) runStart=s.start;
+      runEnd=sEnd;runNames.push(s.name);
+    });
+    drawSkip();
+  }
   // 二遍进度条使用二遍规划单独判断“不学”。连续“不学”的多个节合并为一段斜线，
   // 不再因每一节的边界出现白色横线；实际二遍学习过的节仍优先保留绿色。
   {
