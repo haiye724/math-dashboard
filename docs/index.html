@@ -304,7 +304,7 @@ input[type=file]{display:none}
 }
 .vchap-head .cnt{font-size:11px;color:var(--ink-faint);font-weight:400;font-family:"PingFang SC","Microsoft YaHei",sans-serif}
 .vgrid{display:grid;grid-template-columns:1fr 56px 178px;gap:0 12px}
-.vhead.mode-both,.vgrid.mode-both{grid-template-columns:1fr 46px 128px 46px 108px}
+.vhead.mode-both,.vgrid.mode-both{grid-template-columns:1fr 34px 128px 34px 128px}
 .vbar{
   position:relative;background:#F1F4F6;border:1px solid var(--line);
   border-radius:5px;overflow:visible;align-self:stretch;
@@ -344,6 +344,12 @@ input[type=file]{display:none}
 .pace-badge.slow{background:var(--fail);color:#fff}
 .pace-badge.fast{background:var(--pass);color:#fff}
 .pace-badge.even{background:var(--paper);color:var(--ink-mid);border:1px solid var(--line);font-weight:400}
+/* 双栏下课次日期与快慢时长保持同一行。
+   课次栏略加宽、进度条略收窄；标签同步收紧，避免长日期和时长相互挤压或越出白色区域。 */
+.vgrid.mode-both .lesson-line{gap:2px;min-width:0}
+.vgrid.mode-both .lesson-tag,.vgrid.mode-both .pace-badge{
+  flex:0 0 auto;font-size:10px;padding-left:4px;padding-right:4px;
+}
 .fail-badge{
   font-size:11px;line-height:1;font-weight:600;white-space:nowrap;
   color:var(--fail);background:var(--fail-bg);border:1px solid var(--fail);
@@ -1837,7 +1843,7 @@ function renderProgress(stu, grade, inGrade){
 
   const paintJobs=[];
 
-  // —— 组装渲染单元：每章一个单元；桌面端按节高估算均衡拆成两列，过高的章按节拆段 ——
+  // —— 组装渲染单元：双列时允许在“节”边界拆章，但只在确实更均衡时采用 ——
   const visChaps = t.real.filter(ch=>{
     if(!planIdxSet || planCountIn(ch.start,ch.len)>0) return true;
     for(let i=ch.start;i<ch.start+ch.len;i++) if(actualLearnedSet.has(i)) return true;
@@ -1879,36 +1885,47 @@ function renderProgress(stu, grade, inGrade){
   const CH_EXTRA = 64;   // 章头+间距估算
   let frags=[];          // {ch, secs, cont}
   let splitFragIdx=null; // 第二列起始的 frag 下标
-  const twoCol = window.innerWidth>=900 && visChaps.length>0;
+  // 桌面端固定保持左右两栏；标签在各自课次列内自动上下排布。
+  const twoCol = window.innerWidth>=900 && visChaps.length>1;
   if(twoCol){
-    const secList=[];   // 展平的节序列（带所属章）
-    visChaps.forEach(ch=>ch.sections.forEach(s=>secList.push({ch,s,h:secEstH(s)})));
-    const total=secList.reduce((a,x)=>a+x.h,0) + visChaps.length*CH_EXTRA;
-    // 找最接近总高一半的节边界
-    let acc=0, best=0, bestDiff=Infinity;
-    const chSeen=new Set();
+    const secList=[];
+    visChaps.forEach((ch,chIndex)=>ch.sections.forEach((s,secIndex)=>{
+      secList.push({ch,chIndex,secIndex,h:secEstH(s)});
+    }));
+    const sectionTotal=secList.reduce((sum,x)=>sum+x.h,0);
+    let prefix=0, bestAny=null, bestWhole=null;
     secList.forEach((x,i)=>{
-      if(!chSeen.has(x.ch)){ chSeen.add(x.ch); acc+=CH_EXTRA; }
-      acc+=x.h;
-      const diff=Math.abs(acc-(total-acc));
-      if(i<secList.length-1 && diff<bestDiff){ bestDiff=diff; best=i; }
+      prefix+=x.h;
+      if(i>=secList.length-1) return;
+      const splitInChapter=x.secIndex<x.ch.sections.length-1;
+      // 在章内拆分会新增一个“（续）”章头；必须计入右栏高度，
+      // 否则会低估右栏，出现看似均衡、实际右栏更长的情况。
+      const leftH=prefix+(x.chIndex+1)*CH_EXTRA;
+      const rightHeaders=visChaps.length-x.chIndex-(splitInChapter?0:1);
+      const rightH=(sectionTotal-prefix)+rightHeaders*CH_EXTRA;
+      const candidate={index:i,diff:Math.abs(leftH-rightH),splitInChapter};
+      if(!bestAny||candidate.diff<bestAny.diff) bestAny=candidate;
+      if(!splitInChapter&&(!bestWhole||candidate.diff<bestWhole.diff)) bestWhole=candidate;
     });
-    // 按分割点生成 frags
+    // 章节内拆分只有比完整章边界至少改善一个章头高度时才采用，
+    // 防止为了极小差异把一章只拆出一小段到另一列。
+    const best=(bestAny?.splitInChapter&&bestWhole&&bestWhole.diff-bestAny.diff<CH_EXTRA)
+      ? bestWhole : bestAny;
     let idx=0;
     visChaps.forEach(ch=>{
       const n=ch.sections.length;
-      const cut = best-idx;               // 分割点落在本章第 cut 节之后（0-based，含）
-      if(cut>=0 && cut<n-1){              // 章内拆分
-        frags.push({ch, secs:ch.sections.slice(0,cut+1), cont:false});
+      const cut=(best?.index??-1)-idx;
+      if(cut>=0&&cut<n-1){
+        frags.push({ch,secs:ch.sections.slice(0,cut+1),cont:false});
         splitFragIdx=frags.length;
-        frags.push({ch, secs:ch.sections.slice(cut+1), cont:true});
-      } else {
-        frags.push({ch, secs:ch.sections, cont:false});
-        if(cut===n-1) splitFragIdx=frags.length;   // 恰在章边界
+        frags.push({ch,secs:ch.sections.slice(cut+1),cont:true});
+      }else{
+        frags.push({ch,secs:ch.sections,cont:false});
+        if(cut===n-1) splitFragIdx=frags.length;
       }
       idx+=n;
     });
-    if(splitFragIdx==null || splitFragIdx>=frags.length) { splitFragIdx=frags.length; }
+    if(splitFragIdx==null||splitFragIdx>=frags.length) splitFragIdx=frags.length;
   } else {
     frags = visChaps.map(ch=>({ch, secs:ch.sections, cont:false}));
     splitFragIdx=frags.length;
