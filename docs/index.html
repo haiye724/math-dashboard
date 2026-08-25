@@ -1562,17 +1562,6 @@ function renderProgress(stu, grade, inGrade){
   // 这既能让郭宸祎已完成的一遍计划进入二遍，也不会因杨婧美偶尔回头复习而误搬后续计划。
   const stagePlanCuts=planCuts(stu,grade,state.stage);
   const actualLearnedSet=new Set(aCuts.learnedIdx||[]);
-  const firstFarByChapter=new Map(t.real.map(ch=>{
-    const xs=[...actualLearnedSet].filter(i=>i>=ch.start&&i<ch.start+ch.len);
-    return [ch.start,xs.length?Math.max(...xs):-1];
-  }));
-  const firstReachedPlanCut=c=>{
-    const idxs=(c.idxs||[]).filter(i=>i!==undefined&&t.inReal(i));
-    if(!idxs.length) return false;
-    const anchor=c.anchor??Math.max(...idxs);
-    const ch=t.real.find(x=>anchor>=x.start&&anchor<x.start+x.len);
-    return !!ch&&(firstFarByChapter.get(ch.start)??-1)>=anchor;
-  };
   const planChapterStart=c=>{
     const idx=c.anchor??c.upto;
     const ch=t.real.find(x=>idx>=x.start&&idx<x.start+x.len);
@@ -1587,11 +1576,11 @@ function renderProgress(stu, grade, inGrade){
   });
   const effectivePlanRound=c=>{
     if(state.stage==='fall'||c.round===2) return 2;
-    // 该章已经完成过一遍、且实际重新进入二遍后，已被一遍覆盖的计划课
-    // 必须跟随本章的二遍进度条显示。不能用“实际二遍从第几课开始”作门槛，
-    // 否则计划第 6、9 课会被错误留在一遍栏。
+    // 一遍/二遍按“章”归属：该章已发生真实二遍学习时，该章暑假规划的题模
+    // 都应在二遍栏参与规划判断。不能按某一计划课的最远位置逐课拆分，
+    // 否则同章后半专题会被误判为“不在二遍规划范围内”。
     const chStart=planChapterStart(c);
-    if(chStart!=null&&secondChapters.has(chStart)&&firstReachedPlanCut(c)) return 2;
+    if(chStart!=null&&secondChapters.has(chStart)) return 2;
     return 1;
   };
 
@@ -2273,6 +2262,8 @@ function paintBar(bar, lcol, ch, labelEls, pCuts, pCuts2, aCuts, ppal, ppal2, ap
   }
 
   // ---- 二遍学层（绿色）：按章显示累计进度，绝不跨章 ----
+  // 用于让后面的“二遍不学”斜线避开已经绘制的真实二遍进度。
+  const actualSecondPaintRanges=[];
   if(cuts2 && cuts2.length){
     const required2=new Set(aCuts.requiredIdx2||[]);
     const chapterRequired=[...required2].filter(i=>i>=ch.start&&i<=chEnd);
@@ -2313,6 +2304,7 @@ function paintBar(bar, lcol, ch, labelEls, pCuts, pCuts2, aCuts, ppal, ppal2, ap
               setVisibleFill(seg,y1,y2,greenBar);
               seg.dataset.tip=`第${c.no}课（二遍）｜${c.date}`;
               greenBar.appendChild(seg); hookTip(seg); labelY=y2;
+              actualSecondPaintRanges.push({from:runStart,to:runEnd});
             }
             runStart=null;
           }
@@ -2403,6 +2395,10 @@ function paintBar(bar, lcol, ch, labelEls, pCuts, pCuts2, aCuts, ppal, ppal2, ap
   // 二遍进度条使用二遍规划单独判断“不学”，与一遍斜线互不影响。
   labelEls.forEach(({s})=>{
     if(!secSkipped2(s)) return;
+    const sEnd=s.start+s.len-1;
+    // 斜线只代表“既不在二遍规划、也没有二遍实际学习”的部分。
+    // 以前它在最后一层绘制，会盖住第 2 课之后已填好的绿色实际进度。
+    if(actualSecondPaintRanges.some(r=>r.from<=sEnd&&r.to>=s.start)) return;
     const y1=yOf2(s.start,false), y2=yOf2(s.start+s.len-1,true);
     if(y1==null||y2==null) return;
     const seg=document.createElement('div'); seg.className='fill-seg skip2-seg';
