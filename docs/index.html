@@ -866,9 +866,14 @@ function moduleGrades(name){
 
 /* ================= 学生 / 年级 ================= */
 function studentList(){
-  const seen=[]; const s=new Set();
-  records.forEach(r=>{ if(!s.has(r.n)){s.add(r.n);seen.push(r.n);} });
-  return seen.sort((a,b)=>a.localeCompare(b,'zh'));
+  // 学生名单不能只依赖当前答题记录：有规划但暂未产生记录的学生也必须能搜索、切换。
+  const names=new Set([
+    ...records.map(r=>r.n),
+    ...Object.keys(fullLearned||{}),
+    ...Object.keys(plans||{}),
+    ...Object.keys(plansFall||{})
+  ].map(n=>String(n||'').trim()).filter(Boolean));
+  return [...names].sort((a,b)=>a.localeCompare(b,'zh'));
 }
 function detectGrade(stu){
   if(state.gradeOverride[stu]) return state.gradeOverride[stu];
@@ -931,6 +936,8 @@ stuSearch.addEventListener('keydown',e=>{
 function renderStuList(kw){
   const list=studentList().filter(n=>!kw||n.includes(kw));
   stuListEl.innerHTML='';
+  // 切换学生或重新搜索后从结果首项开始，不能保留上一次名单的滚动位置。
+  stuListEl.scrollTop=0;
   if(!list.length){ stuListEl.innerHTML='<div class="stu-empty">没有匹配的学生</div>'; return; }
   list.forEach(n=>{
     const b=document.createElement('button');
