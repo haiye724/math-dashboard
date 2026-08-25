@@ -1498,8 +1498,6 @@ function renderProgress(stu, grade, inGrade){
   const stageStart=state.stage==='fall'?fallFirstLessonDate(stu):firstLessonDate(stu);
   const stageEnd=state.stage==='summer'&&plansFall[stu]?fallFirstLessonDate(stu):null;
   const aCuts=lessonCuts(stu,inGrade,grade,stageStart,stageEnd,activePlan);
-  const firstFilledChapterStarts=new Set(t.real.filter(ch=>(aCuts.learnedIdx||[])
-    .some(i=>i>=ch.start&&i<ch.start+ch.len)).map(ch=>ch.start));
 
   // —— 二遍学：课次切分（有效活动第二轮）——
   // 只要出现明确的再次学习，就展示二遍；不再要求整份暑期规划先全部学完。
@@ -1508,8 +1506,9 @@ function renderProgress(stu, grade, inGrade){
   for(const [n,ds] of Object.entries(spRaw.byMod)){
     const idx=t.byName.get(n);
     const ch=idx===undefined?null:t.real.find(x=>idx>=x.start&&idx<x.start+x.len);
-    // 二遍进度必须建立在同章已有一遍进度的基础上。
-    if(!ch||!firstFilledChapterStarts.has(ch.start)) continue;
+    // secondPassOf 已确认该章此前已学且达到 20% 后才会进入二遍。
+    // 不再依赖一遍色块是否成功渲染，避免历史学习被隐藏时连带丢失二遍填色。
+    if(!ch) continue;
     const kept=ds.filter(d=>d>=stageStart&&(!stageEnd||d<stageEnd));
     if(kept.length) sp.byMod[n]=kept;
   }
@@ -1673,12 +1672,15 @@ function renderProgress(stu, grade, inGrade){
   // 未过关统计：按节（用于章头合计）与按课次（用于进度格标注）
   const failBySec={};
   const failLC={};   // `${课次号}|${章start}` -> {n, idxs:[内容序号]}
+  const failLC2={};  // 二遍学按实际二遍课次统计，绘制在绿色进度条
   {
     const date2no = {}; aCuts.forEach(c=>date2no[c.date]=c.no);
     const date2cut = {}; aCuts.forEach(c=>date2cut[c.date]=c);
     const seen=new Set();
     inGrade.forEach(r=>{
       if(r.p || seen.has(r.m)) return;
+      // 同一题模已进入二遍时，未过关标记只放在二遍进度条，避免错误留在一遍。
+      if((sp.byMod[r.m]||[]).length) return;
       if(tgt0 && !tgt0.set.has(r.m)) return;   // 与已学过关率同口径：剔除计划外的未过关记录
       const i=t.byName.get(r.m);
       if(i===undefined || !t.inReal(i)) return;
@@ -1693,6 +1695,29 @@ function renderProgress(stu, grade, inGrade){
           const s=ch.sections.find(s=>i>=s.start && i<s.start+s.len);
           if(s) failBySec[s.start]=(failBySec[s.start]||0)+1;
           (failLC[no]=failLC[no]||[]).push(i);
+          break;
+        }
+      }
+    });
+  }
+  {
+    const date2cut2={}; cuts2.forEach(c=>date2cut2[c.date]=c);
+    const seen=new Set();
+    inGrade.forEach(r=>{
+      if(r.p || seen.has(r.m)) return;
+      if(tgt0 && !tgt0.set.has(r.m)) return;
+      const i=t.byName.get(r.m);
+      if(i===undefined || !t.inReal(i)) return;
+      const d=(sp.byMod[r.m]||[]).filter(x=>date2cut2[x]).sort()[0];
+      if(!d) return;
+      const cut=date2cut2[d];
+      if(!cut || !(cut.idxs||[]).includes(i)) return;
+      seen.add(r.m);
+      for(const ch of t.real){
+        if(i>=ch.start && i<ch.start+ch.len){
+          const s=ch.sections.find(s=>i>=s.start && i<s.start+s.len);
+          if(s) failBySec[s.start]=(failBySec[s.start]||0)+1;
+          (failLC2[cut.no]=failLC2[cut.no]||[]).push(i);
           break;
         }
       }
@@ -1812,15 +1837,37 @@ function renderProgress(stu, grade, inGrade){
     return false;
   });
   const secEstH = s => {
-    const historicalDates=new Set((aCuts.fillRanges||[])
-      .filter(r=>r.historical&&r.date&&r.upto>=s.start&&r.upto<s.start+s.len)
+    const end=s.start+s.len-1;
+    const sectionChapter=t.real.find(ch=>s.start>=ch.start&&s.start<ch.start+ch.len);
+    // 行高只为页面上实际会出现的课次标签预留。此前把一、二遍及其计划标签
+    // 直接相加，即使某一遍已隐藏或标签被移到另一遍，也会把节名行异常撑高。
+    const firstHistoryDates=new Set((aCuts.fillRanges||[])
+      .filter(r=>r.historical&&r.date&&r.upto>=s.start&&r.upto<=end)
       .map(r=>r.date));
-    const ends = aCuts.filter(c=>c.upto>=s.start && c.upto<s.start+s.len).length
-               + planTags.filter(c=>(c.anchor??c.upto)>=s.start && (c.anchor??c.upto)<s.start+s.len).length
-               + planTags2.filter(c=>(c.anchor??c.upto)>=s.start && (c.anchor??c.upto)<s.start+s.len).length
-               + cuts2.filter(c=>(c.ranges||[]).some(r=>r.upto>=s.start && r.from<s.start+s.len)).length
-               + historicalDates.size;
-    return ends>1 ? 34+(ends-1)*24 : 34;
+    const firstLabels=(mode==='second'?0:
+      aCuts.filter(c=>c.showLessonLabel!==false&&c.upto>=s.start&&c.upto<=end).length
+      + firstHistoryDates.size
+      + planTags.filter(c=>{
+          const anchor=c.anchor??c.upto;
+          return anchor>=s.start&&anchor<=end;
+        }).length
+    );
+    // 二遍标签在每一章内定位到当天该章最后一个题模；同一天跨章时，
+    // 不应把另一个章节的标签也计入本节高度。
+    const secondLabels=mode==='first'?0:(
+      cuts2.filter(c=>{
+        const idxs=(c.idxs||[]).filter(i=>sectionChapter&&i>=sectionChapter.start&&i<sectionChapter.start+sectionChapter.len);
+        const anchor=idxs.length?Math.max(...idxs):-1;
+        return anchor>=s.start&&anchor<=end;
+      }).length
+      + planTags2.filter(c=>{
+          const anchor=c.anchor??c.upto;
+          return anchor>=s.start&&anchor<=end;
+        }).length
+    );
+    // 两个课次列并排展示，只需要为标签较多的一列留空间，不能把两列相加。
+    const labels=Math.max(firstLabels,secondLabels);
+    return labels>1 ? 34+(labels-1)*24 : 34;
   };
   const CH_EXTRA = 64;   // 章头+间距估算
   let frags=[];          // {ch, secs, cont}
@@ -1963,9 +2010,10 @@ function renderProgress(stu, grade, inGrade){
 
   // 依据节名行的实际几何位置，把课次段画到连续进度条上（拆列后再绘制，保证几何正确）
   paintJobs.forEach(j=>{
-    paintBar(j.bar, j.lcol, j.ch, j.labelEls, pCuts, pCuts2, aCuts, PPAL, P2PAL, PALETTE, t, secSkippedFirst, secSkippedSecond, cntText, failLC, failMax, paceHtmlByNo, planTags, planTags2, shortD, j.lcol2, cuts2, secondStartIdx, j.bar2);
-    if(mode==='first') j.bar.querySelectorAll('.act2-seg,.second-plan-seg,.skip2-seg').forEach(el=>el.remove());
-    if(mode==='second') j.bar.querySelectorAll('.plan-seg,.act-seg,.act-divider,.fail-mark,.skip-seg').forEach(el=>el.remove());
+    paintBar(j.bar, j.lcol, j.ch, j.labelEls, pCuts, pCuts2, aCuts, PPAL, P2PAL, PALETTE, t, secSkippedFirst, secSkippedSecond, cntText, failLC, failMax, failLC2, paceHtmlByNo, planTags, planTags2, shortD, j.lcol2, cuts2, secondStartIdx, j.bar2);
+    if(mode==='first') j.bar.querySelectorAll('.act2-seg,.second-plan-seg,.skip2-seg,.second-fail-mark').forEach(el=>el.remove());
+    // 仅显示二遍时，移除一遍层；二遍的未过关图标必须保留。
+    if(mode==='second') j.bar.querySelectorAll('.plan-seg,.act-seg,.act-divider,.fail-mark:not(.second-fail-mark),.skip-seg').forEach(el=>el.remove());
   });
 }
 /* 模序号 -> 进度条内像素位置（节内按知识点数线性插值） */
@@ -1986,7 +2034,7 @@ function makeYMapper(bar, ch, labelEls){
   };
 }
 /* 一章的进度条：浅色计划打底；深色只覆盖真实学过的知识点，课次标签按当天内容定位 */
-function paintBar(bar, lcol, ch, labelEls, pCuts, pCuts2, aCuts, ppal, ppal2, apal, t, secSkipped, secSkipped2, cntTextRef, failLC, failMax, paceHtmlByNo, planTags, planTags2, shortD, lcol2, cuts2, secondStartIdx, secondBar){
+function paintBar(bar, lcol, ch, labelEls, pCuts, pCuts2, aCuts, ppal, ppal2, apal, t, secSkipped, secSkipped2, cntTextRef, failLC, failMax, failLC2, paceHtmlByNo, planTags, planTags2, shortD, lcol2, cuts2, secondStartIdx, secondBar){
   const MIN=22;
   const MIN_VISIBLE_FILL=10;
   const setVisibleFill=(seg,y1,y2,host)=>{
@@ -2256,6 +2304,26 @@ function paintBar(bar, lcol, ch, labelEls, pCuts, pCuts2, aCuts, ppal, ppal2, ap
         lcol2.appendChild(line);
       }
     });
+    // 二遍未过关标记：与一遍一致按「实际课次 × 本章内容」汇总，放在绿色条上。
+    if(failLC2){
+      for(const [noStr, idxsAll] of Object.entries(failLC2)){
+        const no=+noStr;
+        const idxs=idxsAll.filter(i=>i>=ch.start && i<=chEnd);
+        const n=idxs.length;
+        if(!n) continue;
+        const mid=idxs[Math.floor(idxs.length/2)];
+        const y1=yOf2(mid,false), y2b=yOf2(mid,true);
+        if(y1==null||y2b==null) continue;
+        const dot=document.createElement('div');
+        dot.className='fail-mark second-fail-mark';
+        dot.style.top=((y1+y2b)/2)+'px';
+        dot.innerHTML=`<svg viewBox="0 0 14 12" aria-hidden="true"><path d="M7 0.5 L13.5 11.5 L0.5 11.5 Z" fill="#C7442E"/><rect x="6.35" y="3.8" width="1.3" height="4" rx="0.6" fill="#fff"/><rect x="6.35" y="8.9" width="1.3" height="1.4" rx="0.6" fill="#fff"/></svg><b>${n}</b>`;
+        dot.dataset.tip=`第${no}课（二遍）`;
+        dot.dataset.sub=`未过关 ${n} 个知识点`;
+        hookTip(dot);
+        greenBar.appendChild(dot);
+      }
+    }
   }
 
   // ---- 计划课次标签（不带日期，底边对齐计划分隔线） ----
@@ -2373,11 +2441,12 @@ function paintBar(bar, lcol, ch, labelEls, pCuts, pCuts2, aCuts, ppal, ppal2, ap
 
   // 未过关标记去重叠：按中心位置排序，重叠时向下让位；越界则整串向上回拉
   {
-    const marks=[...bar.querySelectorAll('.fail-mark')]
-      .map(el=>({el, y:parseFloat(el.style.top)||0}))
-      .sort((a,b)=>a.y-b.y);
-    if(marks.length>1){
-      const H=bar.offsetHeight||0;
+    const spreadFailMarks=host=>{
+      const marks=[...host.querySelectorAll('.fail-mark')]
+        .map(el=>({el, y:parseFloat(el.style.top)||0}))
+        .sort((a,b)=>a.y-b.y);
+      if(marks.length<=1) return;
+      const H=host.offsetHeight||0;
       let last=-1e9;
       marks.forEach(M=>{
         const h=M.el.offsetHeight||20;
@@ -2391,7 +2460,9 @@ function paintBar(bar, lcol, ch, labelEls, pCuts, pCuts2, aCuts, ppal, ppal2, ap
         if(marks[i].y>limit) marks[i].y=limit;
       }
       marks.forEach(M=>{ M.el.style.top=M.y+'px'; });
-    }
+    };
+    spreadFailMarks(bar);
+    if(secondBar&&greenBar!==bar) spreadFailMarks(greenBar);
   }
   bar.dataset.tip=ch.name.replace(/☽/g,'');
   hookTip(bar);
@@ -2443,11 +2514,9 @@ function applyRecordRows(js){
     const studyDays=[...newActs,...reinforceActs];
     const answerAll=ansCols.map(c=>normDate(r[c])).filter(Boolean);
     const base=new Set([...answerDays,...studyDays]);
-    // 前测若答对，或当天另有有效学习，计为一次有效接触；
-    // 前测答错且没有任何其他日期时也保留，作为该题模的首次学习，不能直接判成二遍。
+    // 前测无论答对或答错，均是一项正式学习活动并计入已学；消错题仍不计入。
     const preDay=preCol?normDate(r[preCol]):null;
-    const preOk=String(r['前测是否答对']??'').trim()==='答对';
-    if(preDay&&(preOk||base.has(preDay)||(!base.size&&!answerAll.length))) base.add(preDay);
+    if(preDay) base.add(preDay);
     const testActs=preDay&&base.has(preDay)?[preDay]:[];
     const studyActs=[...new Set([...studyDays,...answerDays.filter(d=>d!==preDay)])].sort();
     const acts=[...base].sort();
