@@ -10,7 +10,7 @@
 .wrap{max-width:1380px;margin:auto;padding:26px 24px 56px}.top{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:18px}.top h1{font:700 25px/1.2 "Songti SC","SimSun",serif;letter-spacing:2px;color:var(--deep);margin:0}.top .sub{color:var(--mid);font-size:12px}.back{margin-left:auto;color:var(--blue);text-decoration:none;border:1px solid var(--line);background:#fff;border-radius:8px;padding:7px 13px}
 .controls,.panel{background:var(--card);border:1px solid var(--line);border-radius:11px}.controls{padding:14px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px}.controls label{font-size:12px;color:var(--mid)}select,input{font:inherit;color:var(--ink);background:#fff;border:1px solid var(--line);border-radius:7px;padding:7px 10px}select{min-width:150px}.search{min-width:230px;flex:1;max-width:380px}.seg{display:flex;gap:6px}.seg button,.tabs button{font:inherit;border:1px solid var(--line);background:#fff;color:var(--mid);border-radius:7px;padding:7px 13px;cursor:pointer}.seg button.on,.tabs button.on{background:var(--deep);border-color:var(--deep);color:#fff}.sync{margin-left:auto;font-size:12px;color:#8ba0b3}
 .export{font:inherit;border:1px solid var(--blue);background:var(--blue);color:#fff;border-radius:7px;padding:7px 15px;cursor:pointer;font-weight:600}.export:disabled{opacity:.45;cursor:not-allowed}
-.summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:16px}.stat{background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px 16px}.stat .k{font-size:12px;color:var(--mid)}.stat .v{font-size:25px;font-weight:700;color:var(--deep);margin-top:2px}.stat.learned .v{color:var(--green)}.stat.unlearned .v{color:var(--red)}
+.summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:16px}.stat{background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px 16px}.stat .k{font-size:12px;color:var(--mid)}.stat .v{font-size:25px;font-weight:700;color:var(--deep);margin-top:2px}.stat.learned .v,.stat.pass-rate .v{color:var(--green)}.stat.unlearned .v{color:var(--red)}.stat .note{margin-top:1px;font-size:11px;color:var(--mid)}
 .panel{overflow:hidden}.tabs{display:flex;gap:8px;padding:14px 16px 10px;border-bottom:1px solid var(--line)}.table-wrap{overflow:auto;max-height:calc(100vh - 330px);min-height:300px}table{border-collapse:separate;border-spacing:0;width:100%;min-width:980px}th,td{text-align:left;padding:9px 11px;border-bottom:1px solid var(--grid);vertical-align:top}th{position:sticky;top:0;z-index:2;background:var(--pale);font-size:12px;color:var(--mid);white-space:nowrap}td.module{font-weight:600;color:#2c65a0;min-width:300px}.pass{color:var(--green);font-weight:700}.fail{color:var(--red);font-weight:700}.empty{text-align:center;color:#8ca0b3;padding:70px 20px}.loading{padding:80px;text-align:center;color:var(--mid)}
 @media(max-width:700px){.wrap{padding:16px 10px 40px}.top h1{font-size:21px}.back{margin-left:0}.summary{grid-template-columns:1fr 1fr}.summary .stat:first-child{grid-column:1/-1}.sync{width:100%;margin:0}.table-wrap{max-height:none}}
 </style>
@@ -28,6 +28,7 @@
   </div>
   <div class="summary">
     <div class="stat"><div class="k">当前学生</div><div class="v" id="studentName">—</div></div>
+    <div class="stat pass-rate"><div class="k">规划过关率（必学/测学）</div><div class="v" id="plannedPassRate">—</div><div class="note" id="plannedPassCount">过关 — / — 模</div></div>
     <div class="stat learned"><div class="k">已学题模</div><div class="v" id="learnedCount">—</div></div>
     <div class="stat unlearned"><div class="k">规划内未学</div><div class="v" id="unlearnedCount">—</div></div>
   </div>
@@ -38,7 +39,7 @@
 </div>
 <script>
 'use strict';
-const SKIP=new Set(['暑期总复习','选学','错题回顾','回顾块','章节限时测','模拟考']);
+const SKIP=new Set(['暑期总复习','选学','错题回顾','回顾块','章节限时测','模拟考','小初计算测试']);
 const STAT_HEADERS=[
   '学生名称','学生等级','规划等级','学科','题模名称','题模难度','前测是否答对','前测日期',
   '新知学正确率1','新知学结果1','新知学日期1','新知学正确率2','新知学结果2','新知学日期2',
@@ -58,12 +59,27 @@ function fallDate(stu){return savedDate('mathDashboardFallFirstLessonDatesV1',st
 function makeTrees(){for(const g of ['初一','初二','初三']){const rows=DATA.tree?.[g]||[],byName=new Map();rows.forEach(r=>{if(!byName.has(r.m))byName.set(r.m,r.o)});const real=[];let c=null;rows.forEach(r=>{if(!c||c.name!==r.c){c={name:r.c,start:r.o,len:0};if(/^第[0-9〇零一二三四五六七八九十百]+章/.test(String(r.c).trim()))real.push(c)}c.len++});TREES[g]={rows,byName,inReal:i=>real.some(c=>i>=c.start&&i<c.start+c.len)}}}
 function gradeOf(stu){const p=DATA.plans?.[stu]||DATA.plansFall?.[stu],cnt={};for(const n of Object.keys(p?.dur||{}))for(const g of Object.keys(TREES))if(TREES[g].byName.has(n))cnt[g]=(cnt[g]||0)+1;return Object.keys(TREES).sort((a,b)=>(cnt[b]||0)-(cnt[a]||0))[0]||'初一'}
 function planCounted(P,n,t){return !SKIP.has(P?.types?.[n])&&t.byName.has(n)}
+function corePlanModule(P,n,t){
+  const type=String(P?.types?.[n]||'').trim();
+  return t.byName.has(n) && !/(暑期总复习|错题回顾|小初计算测试)/.test(n) && (type==='必学'||type==='测学'||type==='测学(进度)');
+}
 function studySets(stu,start){const current=new Set(),prior=new Set(),names=new Set();for(const r of DATA.records||[]){if(r.n!==stu)continue;names.add(r.m);const ds=days(r);if(ds.some(d=>d>=start))current.add(r.m);if(ds.some(d=>d<start))prior.add(r.m)}for(const n of DATA.fullLearned?.[stu]||[])if(!names.has(n))prior.add(n);return{current,prior}}
 function rowPlace(t,name){const i=t.byName.get(name),r=i===undefined?{}:t.rows[i]||{};return{idx:i??99999,chapter:String(r.c||'').replace(/☽/g,''),section:String(r.s||'').replace(/☽/g,'')}}
 function compute(stage=state.stage){const stu=state.student,grade=gradeOf(stu),t=TREES[grade],start=stage==='fall'?fallDate(stu):firstDate(stu),end=stage==='summer'&&DATA.plansFall?.[stu]?fallDate(stu):null,inStage=d=>d&&d>=start&&(!end||d<end);const learned=[];for(const r of DATA.records||[]){if(r.n!==stu)continue;const ds=days(r).filter(inStage).sort();if(!ds.length)continue;const p=rowPlace(t,r.m);learned.push({...p,module:r.m,pass:!!r.p,pre:r.pre||'',dates:ds.join('、'),sort:ds[0],record:r})}learned.sort((a,b)=>a.sort.localeCompare(b.sort)||a.idx-b.idx);
-  const P=stage==='fall'?DATA.plansFall?.[stu]:DATA.plans?.[stu],unlearned=[];if(P){const {current,prior}=studySets(stu,start),lm=new Map();(P.lessons||[]).forEach((L,i)=>(L.names||[]).forEach(n=>{const a=lm.get(n)||[];a.push({no:Number(L.no)||i+1,date:L.date||''});lm.set(n,a)}));for(const n of Object.keys(P.dur||{})){if(!planCounted(P,n,t)||current.has(n)||prior.has(n))continue;const p=rowPlace(t,n),ls=lm.get(n)||[];unlearned.push({...p,module:n,type:P.types[n]||'',dur:Number(P.dur[n])||0,lesson:ls.map(x=>`第${x.no}课`).join('、'),date:[...new Set(ls.map(x=>x.date).filter(Boolean))].join('、'),sort:ls[0]?.no||9999})}unlearned.sort((a,b)=>a.sort-b.sort||a.idx-b.idx)}return{grade,start,end,learned,unlearned,hasPlan:!!P}}
+  const P=stage==='fall'?DATA.plansFall?.[stu]:DATA.plans?.[stu],unlearned=[];
+  let plannedPass={passed:0,total:0};
+  if(P){
+    const {current,prior}=studySets(stu,start),lm=new Map();
+    (P.lessons||[]).forEach((L,i)=>(L.names||[]).forEach(n=>{const a=lm.get(n)||[];a.push({no:Number(L.no)||i+1,date:L.date||''});lm.set(n,a)}));
+    const passed=new Set((DATA.records||[]).filter(r=>r.n===stu&&r.p).map(r=>r.m));
+    const coreNames=new Set(Object.keys(P.dur||{}).filter(n=>corePlanModule(P,n,t)));
+    plannedPass={passed:[...coreNames].filter(n=>passed.has(n)).length,total:coreNames.size};
+    for(const n of Object.keys(P.dur||{})){if(!planCounted(P,n,t)||current.has(n)||prior.has(n))continue;const p=rowPlace(t,n),ls=lm.get(n)||[];unlearned.push({...p,module:n,type:P.types[n]||'',dur:Number(P.dur[n])||0,lesson:ls.map(x=>`第${x.no}课`).join('、'),date:[...new Set(ls.map(x=>x.date).filter(Boolean))].join('、'),sort:ls[0]?.no||9999})}
+    unlearned.sort((a,b)=>a.sort-b.sort||a.idx-b.idx)
+  }
+  return{grade,start,end,learned,unlearned,plannedPass,hasPlan:!!P}}
 function filter(rows){const k=state.search.trim().toLowerCase();return k?rows.filter(r=>[r.module,r.chapter,r.section,r.lesson,r.date].some(x=>String(x||'').toLowerCase().includes(k))):rows}
-function render(){const x=compute();$('studentName').textContent=state.student;$('learnedCount').textContent=x.learned.length;$('unlearnedCount').textContent=x.hasPlan?x.unlearned.length:'—';$('summer').classList.toggle('on',state.stage==='summer');$('fall').classList.toggle('on',state.stage==='fall');$('tabLearned').classList.toggle('on',state.tab==='learned');$('tabUnlearned').classList.toggle('on',state.tab==='unlearned');$('tabLearned').textContent=`已学 ${x.learned.length}`;$('tabUnlearned').textContent=`未学 ${x.hasPlan?x.unlearned.length:'—'}`;$('export').textContent=state.stage==='fall'?'导出秋季':'导出暑假';$('export').disabled=!x.hasPlan;
+function render(){const x=compute(),pass=x.plannedPass;$('studentName').textContent=state.student;$('learnedCount').textContent=x.learned.length;$('unlearnedCount').textContent=x.hasPlan?x.unlearned.length:'—';$('plannedPassRate').textContent=x.hasPlan&&pass.total?`${(pass.passed/pass.total*100).toFixed(1)}%`:'—';$('plannedPassCount').textContent=x.hasPlan?`过关 ${pass.passed} / ${pass.total} 模`:'未导入规划';$('summer').classList.toggle('on',state.stage==='summer');$('fall').classList.toggle('on',state.stage==='fall');$('tabLearned').classList.toggle('on',state.tab==='learned');$('tabUnlearned').classList.toggle('on',state.tab==='unlearned');$('tabLearned').textContent=`已学 ${x.learned.length}`;$('tabUnlearned').textContent=`未学 ${x.hasPlan?x.unlearned.length:'—'}`;$('export').textContent=state.stage==='fall'?'导出秋季':'导出暑假';$('export').disabled=!x.hasPlan;
   const rows=filter(state.tab==='learned'?x.learned:x.unlearned);if(state.tab==='unlearned'&&!x.hasPlan){$('content').innerHTML='<div class="empty">该学生尚未导入当前阶段规划，无法计算未学题模。</div>';return}if(!rows.length){$('content').innerHTML='<div class="empty">当前条件下没有数据。</div>';return}
   if(state.tab==='learned'){$('content').innerHTML=`<table><thead><tr><th>学习日期</th><th>章节</th><th>章/节/专题</th><th>题模名称</th><th>是否过关</th><th>前测</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.dates)}</td><td>${esc(r.chapter)}</td><td>${esc(r.section)}</td><td class="module">${esc(r.module)}</td><td class="${r.pass?'pass':'fail'}">${r.pass?'过关':'未过关'}</td><td>${esc(r.pre)}</td></tr>`).join('')}</tbody></table>`}else{$('content').innerHTML=`<table><thead><tr><th>计划课次</th><th>计划日期</th><th>章节</th><th>章/节/专题</th><th>题模名称</th><th>规划类型</th><th>时长(min)</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.lesson)}</td><td>${esc(r.date)}</td><td>${esc(r.chapter)}</td><td>${esc(r.section)}</td><td class="module">${esc(r.module)}</td><td>${esc(r.type)}</td><td>${esc(r.dur)}</td></tr>`).join('')}</tbody></table>`}}
 let XLSXlib=null;
