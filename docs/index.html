@@ -2984,6 +2984,9 @@ async function ghShareUpload(files){
   const btn=document.getElementById('shareBtn');
   const oldText=btn.textContent;
   let okCnt=0;
+  // 每次上传都保留一份独立源文件：统计表常用“全量_1人/3人”等固定文件名，
+  // 若按原名写入会把前一次学生的数据直接覆盖掉，导致该学生从看板消失。
+  const batchId=new Date().toISOString().replace(/[-:.TZ]/g,'').slice(0,14);
   for(const f of files){
     btn.textContent=`上传中 ${okCnt+1}/${files.length}…`;
     const b64=await new Promise((res,rej)=>{
@@ -2992,17 +2995,16 @@ async function ghShareUpload(files){
       r.onerror=()=>rej(new Error('读取失败'));
       r.readAsDataURL(f);
     });
-    const api=`https://api.github.com/repos/${owner}/${repo}/contents/uploads/${encodeURIComponent(f.name)}`;
-    let sha;
-    try{
-      const g=await fetch(api,{headers:{Authorization:'Bearer '+token}});
-      if(g.ok) sha=(await g.json()).sha;      // 同名文件覆盖更新
-    }catch(e){}
+    const dot=f.name.lastIndexOf('.');
+    const stem=dot>0 ? f.name.slice(0,dot) : f.name;
+    const ext=dot>0 ? f.name.slice(dot) : '';
+    const uploadName=`${stem}__上传${batchId}_${okCnt+1}${ext}`;
+    const api=`https://api.github.com/repos/${owner}/${repo}/contents/uploads/${encodeURIComponent(uploadName)}`;
     let res;
     try{
       res=await fetch(api,{method:'PUT',
         headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
-        body:JSON.stringify({message:'看板数据上传：'+f.name, content:b64, sha})});
+        body:JSON.stringify({message:'看板数据上传：'+uploadName, content:b64})});
     }catch(e){ alert('网络错误，上传中断：'+f.name); btn.textContent=oldText; return; }
     if(!res.ok){
       if(res.status===401||res.status===403){
