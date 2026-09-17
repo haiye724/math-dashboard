@@ -2989,10 +2989,9 @@ function chapterDate(value){
 }
 function chapterStatus(passed,total,started,complete,fallPending=false){
   if(!total)return {kind:'idle',text:'未安排'};
-  if(passed===total)return {kind:'ok',text:'正常 · 已过关'};
+  if(passed*100>=total*95)return {kind:'ok',text:'正常 · 已过关'};
   if(fallPending)return {kind:'idle',text:'秋季未开始'};
   if(complete){
-    if(passed*100>=total*95)return {kind:'ok',text:'正常 · 已过关'};
     if(passed*100>=total*85)return {kind:'risk',text:'有风险'};
     return {kind:'alert',text:'预警'};
   }
@@ -3026,7 +3025,7 @@ function chapterModels(stu,grade,today=chapterToday()){
     const fallStart=chapterDate(fallFirstLessonDate(stu));
     const fallStarted=!!fallStart&&[...fallNames].some(n=>[...(formalDays.get(n)||[])].some(d=>d>=fallStart));
     const fallPending=count<names.length&&fallNames.size>0&&!fallStarted;
-    return {name,names,passed:count,total:names.length,learned,passedSet:passed,covered,complete,fallPending,late:!!deadline&&today>deadline&&(!complete||fallPending),deadline,missingDate,refs,status:chapterStatus(count,names.length,covered>0,complete,fallPending),pct:names.length?Math.floor(count/names.length*1000)/10:0};
+    return {name,names,passed:count,total:names.length,learned,passedSet:passed,covered,complete,fallPending,late:!!deadline&&today>deadline&&count*100<names.length*95&&(!complete||fallPending),deadline,missingDate,refs,status:chapterStatus(count,names.length,covered>0,complete,fallPending),pct:names.length?Math.floor(count/names.length*1000)/10:0};
   });
 }
 function chapterNodeNote(m){return m.total?`${m.late?'进度滞后 · ':''}${m.deadline?'计划完成：'+m.deadline:'计划节点待定'} · 已学 ${m.covered} / 未学 ${m.total-m.covered}`:'暂无规划或学习记录';}
@@ -3050,7 +3049,6 @@ let chapterLastDay=chapterToday();
 function refreshChapterDay(){const day=chapterToday();if(day!==chapterLastDay){chapterLastDay=day;renderAll();}}
 setInterval(refreshChapterDay,60000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshChapterDay();});
-
 function renderAll(){
   const list=studentList();
   if(!list.length){
