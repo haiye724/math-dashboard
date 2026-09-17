@@ -642,7 +642,7 @@ footer{margin-top:28px;font-size:11px;color:var(--ink-faint);text-align:center;l
   <div class="cards cards-stack" id="fallCards" style="display:none">
     <div class="card">
       <h2 class="big-title">已学过关率<span class="title-badge" id="learnedTitleBadgeF" style="display:none"></span></h2>
-      <div class="desc">第1次课日期起、秋季规划内学过的知识点中，标记为「过关」的比例（按记录条数计）</div>
+      <div class="desc">秋季首课日期起、秋季规划内已学题模的过关比例（按题模去重）</div>
       <div class="rate-flex">
         <div class="ring-wrap">
           <svg viewBox="0 0 132 132" width="132" height="132">
@@ -658,7 +658,7 @@ footer{margin-top:28px;font-size:11px;color:var(--ink-faint);text-align:center;l
           </div>
         </div>
         <div class="rate-detail">
-          <div class="row"><span>学过知识点（条）</span><span class="num" id="learnedTotalF">–</span></div>
+          <div class="row"><span>学过知识点（模）</span><span class="num" id="learnedTotalF">–</span></div>
           <div class="row"><span>过关</span><span class="num pass" id="learnedPassF">–</span></div>
           <div class="row"><span>未过关</span><span class="num fail" id="learnedFailF">–</span></div>
           <div class="date-ctl">
@@ -671,7 +671,7 @@ footer{margin-top:28px;font-size:11px;color:var(--ink-faint);text-align:center;l
     </div>
     <div class="card">
       <h2 class="big-title">进度情况<span class="title-badge" id="paceTitleBadgeF" style="display:none"></span></h2>
-      <div class="desc" id="paceDescF">已学知识点数量 / 本期实际要学知识点总数（测学与必学统一计入，并扣除秋季第1次课前已学）</div>
+      <div class="desc" id="paceDescF">秋季首课日期起已学题模数 / 秋季规划题模总数（当前年级目录范围）</div>
       <div class="rate-flex">
         <div class="ring-wrap">
           <svg viewBox="0 0 132 132" width="132" height="132">
@@ -1109,8 +1109,10 @@ function renderFallCards(stu, grade){
   di.title=`${stu} 的秋季第1次课从 ${fallStart} 开始统计`;
   document.getElementById('resetDateF').textContent=PF.lessons[0]?.date?'使用计划日期':'使用暑假日期';
   const rows=records.filter(r=>r.n===stu && fallSet.has(r.m) && recordDays(r).some(d=>d>=fallStart));
-  const learnedMods=new Set(rows.map(r=>r.m));
-  const total=rows.length, pass=rows.filter(r=>r.p).length, fail=total-pass;
+  const fallStageLearned=new Set(rows.map(r=>r.m));
+  const fallStagePassed=new Set(rows.filter(r=>r.p===1).map(r=>r.m));
+  const learnedMods=fallStageLearned;
+  const total=learnedMods.size, pass=fallStagePassed.size, fail=total-pass;
   const pct1= total? pass/total : 0;
   setRing('ringLearnedF', pct1);
   const lr=document.getElementById('ringLearnedF');
@@ -1128,12 +1130,9 @@ function renderFallCards(stu, grade){
   document.getElementById('learnedTotalF').textContent=total;
   document.getElementById('learnedPassF').textContent=pass;
   document.getElementById('learnedFailF').textContent=fail;
-  // 秋季进度分母是“秋季实际剩余任务”：从秋季规划中扣除秋季第1次课前的全部已学，
-  // 包括暑假及暑假之前的历史学习；只有消错题的记录仍不算已学。
-  const {prior:preFallLearned}=studySets(stu,fallStart);
-  const fallProgressSet=new Set([...fallSet].filter(n=>!preFallLearned.has(n)));
-  const progressLearnedMods=new Set([...learnedMods].filter(n=>fallProgressSet.has(n)));
-  const den=fallProgressSet.size, num=progressLearnedMods.size;
+  // 规划分母不扣历史已学；左右两卡的已学数来自同一去重集合。
+  const fallProgressSet=fallSet;
+  const den=fallSet.size, num=learnedMods.size;
   const pct2= den? num/den : 0;
   setRing('ringPaceF', pct2);
   document.getElementById('pacePctF').textContent= den? (pct2*100).toFixed(1)+'%' : '–';
@@ -2990,6 +2989,7 @@ function chapterDate(value){
 }
 function chapterStatus(passed,total,started,complete,fallPending=false){
   if(!total)return {kind:'idle',text:'未安排'};
+  if(passed===total)return {kind:'ok',text:'正常 · 已过关'};
   if(fallPending)return {kind:'idle',text:'秋季未开始'};
   if(complete){
     if(passed*100>=total*95)return {kind:'ok',text:'正常 · 已过关'};
@@ -3025,7 +3025,7 @@ function chapterModels(stu,grade,today=chapterToday()){
     const fall=plansFall[stu],fallNames=new Set([...Object.keys(fall?.dur||{}),...(fall?.lessons||[]).flatMap(l=>l.names||[])].filter(n=>all.has(n)&&!PLAN_SKIP_TYPES.has(fall?.types?.[n])));
     const fallStart=chapterDate(fallFirstLessonDate(stu));
     const fallStarted=!!fallStart&&[...fallNames].some(n=>[...(formalDays.get(n)||[])].some(d=>d>=fallStart));
-    const fallPending=fallNames.size>0&&!fallStarted;
+    const fallPending=count<names.length&&fallNames.size>0&&!fallStarted;
     return {name,names,passed:count,total:names.length,learned,passedSet:passed,covered,complete,fallPending,late:!!deadline&&today>deadline&&(!complete||fallPending),deadline,missingDate,refs,status:chapterStatus(count,names.length,covered>0,complete,fallPending),pct:names.length?Math.floor(count/names.length*1000)/10:0};
   });
 }
