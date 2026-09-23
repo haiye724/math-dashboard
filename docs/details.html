@@ -49,6 +49,16 @@ tbody tr.row-unlearned td{background:#FFF8E6}
 </div>
 <script>
 'use strict';
+/* 学生停用名单开始 */
+// 仅隐藏展示及台账统计，不删除学情或规划。恢复时移除姓名并重新构建。
+const INACTIVE_STUDENTS = new Set([
+  '徐义博', '田羽棠', '施懿桐', '李宇鑫', '徐知行', '杨鉴泽'
+]);
+function studentIsActive(name){
+  const normalized=String(name||'').trim();
+  return !!normalized&&!INACTIVE_STUDENTS.has(normalized);
+}
+/* 学生停用名单结束 */
 const SKIP=new Set(['暑期总复习','选学','错题回顾','回顾块','章节限时测','模拟考','小初计算测试']);
 const STAT_HEADERS=[
   '学生名称','学生等级','规划等级','学科','题模名称','题模难度','前测是否答对','前测日期',
@@ -133,7 +143,7 @@ function exportAll(){
     X.writeFile(wb,`${safe(stu)}_全量学情_${new Date().toISOString().slice(0,10)}.xlsx`,{compression:true});
   }).catch(e=>alert(e.message||'导出失败')).finally(()=>{btn.disabled=false;btn.textContent=old});
 }
-function initData(data){if(DATA)return;DATA=data;makeTrees();const students=[...new Set((DATA.records||[]).map(r=>r.n))].sort((a,b)=>a.localeCompare(b,'zh'));$('student').innerHTML=students.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');state.student=students.includes(param().get('student'))?param().get('student'):students[0]||'';state.stage=param().get('stage')==='fall'?'fall':'summer';$('student').value=state.student;$('sync').textContent=DATA.generatedAt?`数据更新：${DATA.generatedAt}`:'';render()}
+function initData(data){if(DATA)return;DATA=data;makeTrees();const students=[...new Set((DATA.records||[]).map(r=>r.n))].filter(studentIsActive).sort((a,b)=>a.localeCompare(b,'zh'));$('student').innerHTML=students.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');state.student=students.includes(param().get('student'))?param().get('student'):students[0]||'';state.stage=param().get('stage')==='fall'?'fall':'summer';$('student').value=state.student;$('sync').textContent=DATA.generatedAt?`数据更新：${DATA.generatedAt}`:'';render()}
 async function load(){try{if(window.parent!==window){window.parent.postMessage({type:'math-dashboard-details-ready'},'*');return;}if(location.protocol!=='file:'){const d=await fetch('data.json?'+Date.now(),{cache:'no-store'}).then(r=>r.json());initData(d);return}if(window.parent!==window){window.parent.postMessage({type:'math-dashboard-details-ready'},'*');return}if(window.opener&&typeof window.opener.getDashboardData==='function')initData(window.opener.getDashboardData());else throw new Error('本地明细页需要从学习看板进入')}catch(e){$('content').innerHTML='<div class="empty">数据读取失败。请从原学习看板点击“查看学习明细”进入。</div>'}}
 window.addEventListener('message',e=>{if(e.data?.type==='math-dashboard-data'&&e.data.data)initData(e.data.data)});
 $('student').onchange=e=>{state.student=e.target.value;render()};$('summer').onclick=()=>{state.stage='summer';render()};$('fall').onclick=()=>{state.stage='fall';render()};$('tabLearned').onclick=()=>{state.tab='learned';render()};$('tabUnlearned').onclick=()=>{state.tab='unlearned';render()};$('search').oninput=e=>{state.search=e.target.value;render()};$('export').onclick=exportCurrent;$('exportAll').onclick=exportAll;$('back').onclick=e=>{if(window.parent!==window){e.preventDefault();window.parent.postMessage({type:'math-dashboard-details-close'},'*')}};load();
