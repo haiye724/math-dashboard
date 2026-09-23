@@ -1238,12 +1238,8 @@ function renderFallCards(stu, grade){
   document.getElementById('paceNumF').textContent=num;
   document.getElementById('paceRestF').textContent=den-num;
 
-  // 与暑假相同，以已上课次数标出当前计划应到位置。
-  const attended=new Set(rows.flatMap(recordDays).filter(d=>d>=fallStart)).size;
-  const dueK=Math.min(attended,PF.lessons.length);
-  const dueNames=new Set();
-  for(let k=0;k<dueK;k++) (PF.lessons[k].names||[]).forEach(n=>{ if(fallProgressSet.has(n)) dueNames.add(n); });
-  const planPct=den?Math.min(1,dueNames.size/den):0;
+  const pace=fallPaceInfo(stu,grade);
+  const {dueK,planPct}=pace;
   const tick=document.getElementById('paceTickF');
   const tickLabel=document.getElementById('paceTickLabelF');
   if(den&&dueK>0){
@@ -1253,11 +1249,13 @@ function renderFallCards(stu, grade){
     placeTickLabel(tickLabel,planPct);
   }else{ tick.style.display='none'; tickLabel.style.display='none'; }
   const ptb=document.getElementById('paceTitleBadgeF');
-  const gap=planPct-pct2;
   ptb.style.display=den?'':'none';
-  if(gap>0.15){ document.getElementById('ringPaceF').style.stroke='var(--fail)'; ptb.className='title-badge bad'; ptb.textContent='需关注'; }
-  else if(gap>0.05){ document.getElementById('ringPaceF').style.stroke='#D9A21B'; ptb.className='title-badge warn'; ptb.textContent='较慢'; }
-  else{ document.getElementById('ringPaceF').style.stroke=''; ptb.className='title-badge neutral'; ptb.textContent='正常'; }
+  ptb.textContent=fallPaceLabel(pace);
+  ptb.className='title-badge '+(pace.kind==='alert'?'bad':pace.kind==='risk'?'warn':pace.kind==='ok'?'ok':'neutral');
+  document.getElementById('ringPaceF').style.stroke=pace.kind==='alert'?'var(--fail)':pace.kind==='risk'?'#D9A21B':pace.kind==='idle'?'var(--ink-faint)':'var(--pass)';
+  ptb.title=pace.slowMin===null?'部分应学未学题模缺少计划时长，暂无法折算小时':pace.averageMin>0
+    ?'按已上 '+dueK+' 次课对比计划；应学未学题模时长合计，按平均每课 '+pace.averageMin.toFixed(1)+' 分钟向上取整折算加课次数'
+    :'按已上课次对应的计划计算；平均每课时长不足，暂不折算加课次数';
 }
 
 function renderPaceStat(stu, grade){
@@ -3154,6 +3152,37 @@ const ledgerText={idle:'暂未判定',ok:'正常',risk:'有风险',alert:'预警
 function ledgerEscape(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function ledgerPct(n,d){return d?n/d:0;}
 function ledgerRateKind(pct,total){return !total?'idle':pct>=.9?'ok':pct>=.8?'risk':'alert';}
+// 个人秋季卡片和台账共用：已上第 K 课只比较计划前 K 课，不提前计入未上的课。
+function fallPaceInfo(stu,grade){
+  const P=plansFall[stu],t=TREE[grade],start=fallFirstLessonDate(stu);
+  const target=new Set(Object.keys(P?.dur||{}).filter(n=>t.byName.has(n)));
+  const rows=records.filter(r=>r.n===stu&&target.has(r.m)&&recordDays(r).some(d=>d>=start));
+  const learned=new Set(rows.map(r=>r.m)),lessons=P?.lessons||[];
+  const attended=new Set(rows.flatMap(recordDays).filter(d=>d>=start)).size;
+  const dueK=Math.min(attended,lessons.length),due=new Set();
+  for(let k=0;k<dueK;k++)for(const n of lessons[k].names||[])if(target.has(n))due.add(n);
+  // 已学未过关也算完成学习；规划后面的提前学习不能抵扣前面未学的题模。
+  const missing=[...due].filter(n=>!learned.has(n));
+  const validDuration=n=>P.dur[n]!==null&&P.dur[n]!==''&&Number.isFinite(Number(P.dur[n]))&&Number(P.dur[n])>=0;
+  const durationComplete=missing.every(validDuration);
+  const slowMin=durationComplete?missing.reduce((s,n)=>s+Number(P.dur[n]),0):null;
+  const averageMin=lessons.length&&[...target].every(validDuration)
+    ?[...target].reduce((s,n)=>s+Number(P.dur[n]),0)/lessons.length:0;
+  const addLessons=slowMin>0&&averageMin>0?Math.ceil(slowMin/averageMin):0;
+  const den=target.size,num=learned.size,pct=den?num/den:0,planPct=den?due.size/den:0,gap=planPct-pct;
+  let kind='ok';
+  if(!den||(!dueK&&!num))kind='idle';
+  else if(num===den)kind='ok';
+  else if(slowMin>240||gap>.15)kind='alert';
+  else if(slowMin>120||gap>.05)kind='risk';
+  return {kind,num,den,pct,planPct,gap,slowMin,averageMin,addLessons,dueK,missingCount:missing.length};
+}
+function fallPaceLabel(p){
+  if(p.slowMin>0)return `慢 ${(p.slowMin/60).toFixed(1)}h${p.addLessons?` · 建议加课 ${p.addLessons} 次`:''}`;
+  if(p.kind==='idle')return '暂未判定';
+  if(p.num===p.den&&p.den)return '已完成';
+  return p.kind==='alert'?'需关注':p.kind==='risk'?'较慢':'正常';
+}
 function ledgerStagePass(stu,grade,stage){
   const t=TREE[grade],start=stage==='fall'?fallFirstLessonDate(stu):firstLessonDate(stu);
   if(stage==='fall'){
@@ -3172,6 +3201,7 @@ function ledgerStagePass(stu,grade,stage){
   return {kind:ledgerRateKind(pct,total),passed,total,pct};
 }
 function ledgerStageProgress(stu,grade,stage){
+  if(stage==='fall')return fallPaceInfo(stu,grade);
   const t=TREE[grade],P=stage==='fall'?plansFall[stu]:plans[stu];
   if(!P||Array.isArray(P))return {kind:'idle',num:0,den:0,pct:0,planPct:0,gap:0,slowMin:0};
   const start=stage==='fall'?fallFirstLessonDate(stu):firstLessonDate(stu);
@@ -3216,6 +3246,13 @@ function ledgerChapterRisk(stu,grade){
 }
 function ledgerStudentMetric(stu,stage=ledgerState.stage){
   const grade=detectGrade(stu),pass=ledgerStagePass(stu,grade,stage),progress=ledgerStageProgress(stu,grade,stage),chapter=ledgerChapterRisk(stu,grade);
+  // 台账展示的是当前阶段学情：当前阶段没有任何规划内学习记录时，
+  // 历史章节已达标不能把空集覆盖成“正常”。章节累计状态仍保留在个人看板中。
+  const stageEmpty=pass.total===0&&progress.num===0;
+  if(stageEmpty){
+    const reason=stage==='fall'?'秋季尚未开始':'暂无本阶段可判定数据';
+    return {student:stu,grade,kind:'idle',pass,progress,reason};
+  }
   const parts=[chapter.kind,pass.kind,progress.kind],max=Math.max(...parts.map(k=>ledgerLevel[k]));
   const kind=max<0?'idle':parts.find(k=>ledgerLevel[k]===max)||'idle';
   const reasons=[];
@@ -3225,7 +3262,7 @@ function ledgerStudentMetric(stu,stage=ledgerState.stage){
   }
   if(ledgerLevel[pass.kind]===max&&max>0)reasons.push(`已学过关率 ${(pass.pct*100).toFixed(1)}%`);
   if(ledgerLevel[progress.kind]===max&&max>0){
-    reasons.push(progress.slowMin>120?`计划内待学约 ${(progress.slowMin/60).toFixed(1)}h`:`进度落后计划 ${Math.max(0,Math.round(progress.gap*100))} 个百分点`);
+    reasons.push(stage==='fall'&&progress.slowMin>0?fallPaceLabel(progress):progress.slowMin>120?`计划内待学约 ${(progress.slowMin/60).toFixed(1)}h`:`进度落后计划 ${Math.max(0,Math.round(progress.gap*100))} 个百分点`);
   }
   let reason=reasons.slice(0,2).join('；');
   if(!reason)reason=kind==='idle'?(stage==='fall'?'秋季尚未开始':'暂无可判定数据'):'已判定指标均正常';
