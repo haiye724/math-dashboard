@@ -531,6 +531,69 @@ footer{margin-top:28px;font-size:11px;color:var(--ink-faint);text-align:center;l
 @media(min-width:900px) and (max-width:1079px){#progressBody .pcols{display:block}}
 @media(max-width:540px){.chapter-grid{grid-template-columns:1fr}.chapter-card{padding:14px}.chapter-editor{padding:14px}.pass-color-legend{width:100%;margin:5px 0}}
 
+/* 全体学生台账样式开始 */
+body.ledger-open{overflow:hidden}
+.ledger-view[hidden]{display:none}
+.ledger-view{
+  position:fixed;inset:0;z-index:130;overflow:auto;color:var(--ink);
+  background:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px),var(--paper);
+  background-size:28px 28px,28px 28px,auto;
+}
+.ledger-wrap{max-width:1380px;margin:auto;padding:28px 24px 56px}
+.ledger-header{display:flex;align-items:center;gap:16px;margin-bottom:24px}
+.ledger-header h1{font-family:"Songti SC","STSong","SimSun",serif;font-size:26px;letter-spacing:2px;color:var(--ink-deep)}
+.ledger-header .btn{margin-left:auto}
+.ledger-summary{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px;margin-bottom:18px}
+.ledger-stat{background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:17px 20px}
+.ledger-stat span{display:block;color:var(--ink-mid);font-size:13px}
+.ledger-stat strong{display:block;margin-top:3px;font-size:29px;color:var(--ink-deep);font-variant-numeric:tabular-nums}
+.ledger-stat.kind-ok strong{color:var(--pass)}
+.ledger-stat.kind-risk strong{color:#9A700F}
+.ledger-stat.kind-alert strong{color:var(--fail)}
+.ledger-stat.kind-idle strong{color:#718496}
+.ledger-controls{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;margin-bottom:18px}
+.ledger-field{display:flex;align-items:center;gap:7px;color:var(--ink-mid);font-size:12px}
+.ledger-field select,.ledger-search{border:1px solid var(--line);border-radius:7px;background:#fff;color:var(--ink);font:inherit;padding:8px 10px}
+.ledger-field select{min-width:104px}
+.ledger-search{min-width:210px;flex:1;max-width:330px;font-size:13px}
+.ledger-check{display:flex;align-items:center;gap:7px;color:var(--ink);font-size:13px;white-space:nowrap}
+.ledger-check input{accent-color:var(--actual)}
+.ledger-export{margin-left:auto}
+.ledger-panel{background:#fff;border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+.ledger-panel-head{display:flex;align-items:center;gap:10px;padding:16px 18px 12px}
+.ledger-panel-head h2{font-family:"Songti SC","STSong","SimSun",serif;font-size:20px;letter-spacing:2px;color:var(--ink-deep)}
+.ledger-count{margin-left:auto;color:var(--ink-faint);font-size:12px}
+.ledger-table-wrap{overflow:auto}
+.ledger-table{border-collapse:separate;border-spacing:0;width:100%;min-width:1120px}
+.ledger-table th,.ledger-table td{padding:12px 13px;border-top:1px solid var(--grid);text-align:left;vertical-align:middle}
+.ledger-table th{background:#EEF3F7;color:var(--ink-mid);font-size:12px;white-space:nowrap}
+.ledger-table td{font-size:13px}
+.ledger-name{font-weight:600;color:var(--ink-deep);white-space:nowrap}
+.ledger-risk-pill{display:inline-block;min-width:66px;text-align:center;border:1px solid;border-radius:5px;padding:3px 8px;font-size:12px;font-weight:600;white-space:nowrap}
+.ledger-risk-pill.kind-ok{color:var(--pass);background:var(--pass-bg);border-color:var(--pass)}
+.ledger-risk-pill.kind-risk{color:#875F0A;background:#FBF3DC;border-color:#D9A21B}
+.ledger-risk-pill.kind-alert{color:var(--fail);background:var(--fail-bg);border-color:var(--fail)}
+.ledger-risk-pill.kind-idle{color:#718496;background:#F0F3F5;border-color:#AAB7C1}
+.ledger-metric{--metric-color:#8393A0;min-width:176px}
+.ledger-metric.kind-ok{--metric-color:var(--pass)}
+.ledger-metric.kind-risk{--metric-color:#D9A21B}
+.ledger-metric.kind-alert{--metric-color:var(--fail)}
+.ledger-metric.kind-idle{--metric-color:#AAB7C1}
+.ledger-metric-top{display:flex;align-items:center;gap:10px}
+.ledger-metric strong{width:45px;color:var(--ink-deep);font-size:15px;font-variant-numeric:tabular-nums}
+.ledger-bar{position:relative;flex:1;height:8px;border-radius:4px;background:#E9ECEE;min-width:96px}
+.ledger-bar-fill{display:block;height:100%;border-radius:4px;background:var(--metric-color)}
+.ledger-plan-tick{position:absolute;top:-4px;width:2px;height:16px;background:var(--ink-deep);transform:translateX(-1px)}
+.ledger-plan-label{position:absolute;top:-20px;transform:translateX(-50%);font-size:10px;color:var(--ink-faint);white-space:nowrap}
+.ledger-fraction{display:block;margin-top:3px;color:var(--ink-faint);font-size:11px;font-variant-numeric:tabular-nums}
+.ledger-reason{min-width:220px;color:var(--ink-mid);line-height:1.6}
+.ledger-view-btn{border:1px solid var(--actual);background:#fff;color:var(--actual);border-radius:6px;padding:5px 16px;font:600 12px/1.4 inherit;cursor:pointer;white-space:nowrap}
+.ledger-view-btn:hover{background:#EDF3F8}
+.ledger-view-btn:focus-visible{outline:2px solid var(--actual-2);outline-offset:2px}
+.ledger-empty{text-align:center!important;color:var(--ink-faint);padding:48px 20px!important}
+@media(max-width:900px){.ledger-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.ledger-stat:first-child{grid-column:1/-1}.ledger-export{margin-left:0}}
+@media(max-width:640px){.ledger-wrap{padding:16px 10px 36px}.ledger-header h1{font-size:21px}.ledger-summary{gap:8px}.ledger-stat{padding:12px 14px}.ledger-stat strong{font-size:23px}.ledger-controls{gap:9px}.ledger-field{flex:1}.ledger-field select{width:100%}.ledger-search{max-width:none;width:100%;flex-basis:100%}}
+/* 全体学生台账样式结束 */
 </style>
 </head>
 <body>
@@ -541,6 +604,7 @@ footer{margin-top:28px;font-size:11px;color:var(--ink-faint);text-align:center;l
       <div class="sub">人教版 上学期 · 北京市 &nbsp;|&nbsp; 过关率 × 学习进度</div>
     </div>
     <div class="header-actions">
+      <button class="btn" id="ledgerOpen" type="button">全体学生台账</button>
       <label class="btn primary" for="fileRecords">导入答题数据</label>
       <input type="file" id="fileRecords" accept=".xlsx,.xls">
       <label class="btn" for="filePlan">导入计划进度</label>
@@ -712,6 +776,40 @@ footer{margin-top:28px;font-size:11px;color:var(--ink-faint);text-align:center;l
   <footer id="footerNote"></footer>
 </div>
 
+<!-- 全体学生台账视图开始 -->
+<section class="ledger-view" id="ledgerView" aria-label="全体学生台账" hidden>
+  <div class="ledger-wrap">
+    <div class="ledger-header">
+      <h1>初中数学 · 学习看板</h1>
+      <button class="btn" id="ledgerClose" type="button">返回个人看板</button>
+    </div>
+    <div class="ledger-summary" aria-label="学生状态汇总">
+      <div class="ledger-stat"><span>学生总数</span><strong id="ledgerTotal">0</strong></div>
+      <div class="ledger-stat kind-ok"><span>正常</span><strong id="ledgerOk">0</strong></div>
+      <div class="ledger-stat kind-risk"><span>有风险</span><strong id="ledgerRisk">0</strong></div>
+      <div class="ledger-stat kind-alert"><span>预警</span><strong id="ledgerAlert">0</strong></div>
+      <div class="ledger-stat kind-idle"><span>暂未判定</span><strong id="ledgerIdle">0</strong></div>
+    </div>
+    <div class="ledger-controls">
+      <label class="ledger-field">年级<select id="ledgerGrade"><option value="all">全部</option><option>初一</option><option>初二</option><option>初三</option></select></label>
+      <label class="ledger-field">统计阶段<select id="ledgerStage"><option value="summer">暑假</option><option value="fall">秋季</option></select></label>
+      <label class="ledger-field">风险状态<select id="ledgerRiskFilter"><option value="all">全部</option><option value="alert">预警</option><option value="risk">有风险</option><option value="ok">正常</option><option value="idle">暂未判定</option></select></label>
+      <input class="ledger-search" id="ledgerSearch" type="search" placeholder="搜索学生姓名" autocomplete="off">
+      <label class="ledger-check"><input id="ledgerNeeds" type="checkbox">仅看需处理</label>
+      <button class="btn primary ledger-export" id="ledgerExport" type="button">导出台账</button>
+    </div>
+    <div class="ledger-panel">
+      <div class="ledger-panel-head"><h2>学生管理台账</h2><span class="ledger-count" id="ledgerVisibleCount"></span></div>
+      <div class="ledger-table-wrap">
+        <table class="ledger-table">
+          <thead><tr><th>学生</th><th>年级</th><th>学情风险</th><th>已学过关率</th><th>学习进度</th><th>风险依据</th><th>操作</th></tr></thead>
+          <tbody id="ledgerRows"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+<!-- 全体学生台账视图结束 -->
 <div id="tooltip"></div>
 <div id="toast"></div>
 
@@ -3049,7 +3147,146 @@ let chapterLastDay=chapterToday();
 function refreshChapterDay(){const day=chapterToday();if(day!==chapterLastDay){chapterLastDay=day;renderAll();}}
 setInterval(refreshChapterDay,60000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshChapterDay();});
+/* 全体学生台账逻辑开始 */
+const ledgerState={stage:'fall',grade:'all',risk:'all',query:'',needs:false,visible:[]};
+const ledgerLevel={idle:-1,ok:0,risk:1,alert:2};
+const ledgerText={idle:'暂未判定',ok:'正常',risk:'有风险',alert:'预警'};
+function ledgerEscape(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function ledgerPct(n,d){return d?n/d:0;}
+function ledgerRateKind(pct,total){return !total?'idle':pct>=.9?'ok':pct>=.8?'risk':'alert';}
+function ledgerStagePass(stu,grade,stage){
+  const t=TREE[grade],start=stage==='fall'?fallFirstLessonDate(stu):firstLessonDate(stu);
+  if(stage==='fall'){
+    const P=plansFall[stu];
+    if(!P||Array.isArray(P))return {kind:'idle',passed:0,total:0,pct:0};
+    const names=new Set(Object.keys(P.dur||{}).filter(n=>t.byName.has(n)));
+    const rows=records.filter(r=>r.n===stu&&names.has(r.m)&&recordDays(r).some(d=>d>=start));
+    const learned=new Set(rows.map(r=>r.m)),passed=new Set(rows.filter(r=>r.p===1).map(r=>r.m));
+    const total=learned.size,pct=ledgerPct(passed.size,total);
+    return {kind:ledgerRateKind(pct,total),passed:passed.size,total,pct};
+  }
+  const target=planTarget(stu,grade);
+  let rows=gradeRecords(stu,grade).inGrade.filter(r=>recordDays(r).some(d=>d>=start));
+  if(target)rows=rows.filter(r=>target.set.has(r.m));
+  const total=rows.length,passed=rows.filter(r=>r.p).length,pct=ledgerPct(passed,total);
+  return {kind:ledgerRateKind(pct,total),passed,total,pct};
+}
+function ledgerStageProgress(stu,grade,stage){
+  const t=TREE[grade],P=stage==='fall'?plansFall[stu]:plans[stu];
+  if(!P||Array.isArray(P))return {kind:'idle',num:0,den:0,pct:0,planPct:0,gap:0,slowMin:0};
+  const start=stage==='fall'?fallFirstLessonDate(stu):firstLessonDate(stu);
+  const target=planTargetOf(P,grade);
+  if(!target||!target.set.size)return {kind:'idle',num:0,den:0,pct:0,planPct:0,gap:0,slowMin:0};
+  let den=0,num=0,learned=new Set(),prior=new Set();
+  if(stage==='fall'){
+    const rows=records.filter(r=>r.n===stu&&target.set.has(r.m)&&recordDays(r).some(d=>d>=start));
+    learned=new Set(rows.map(r=>r.m));
+    den=target.set.size;num=learned.size;
+  }else{
+    const sets=studySets(stu,start);learned=sets.current;prior=sets.prior;
+    for(const n of target.set){if(!learned.has(n)&&prior.has(n))continue;den++;if(learned.has(n))num++;}
+  }
+  const pct=ledgerPct(num,den);
+  const attendedRows=records.filter(r=>{
+    if(r.n!==stu)return false;
+    if(stage==='fall')return target.set.has(r.m);
+    const i=t.byName.get(r.m);return i!==undefined&&t.inReal(i);
+  });
+  const attended=new Set(attendedRows.flatMap(recordDays).filter(d=>d>=start)).size;
+  const dueK=Math.min(attended,(P.lessons||[]).length),due=new Set();
+  for(let k=0;k<dueK;k++)for(const n of P.lessons[k]?.names||[])if(target.set.has(n)&&!(stage==='summer'&&!learned.has(n)&&prior.has(n)))due.add(n);
+  const planPct=den?Math.min(1,due.size/den):0,gap=planPct-pct;
+  let slowMin=0;
+  if(stage==='summer'&&dueK){
+    const done=new Set([...prior,...learned]);
+    slowMin=[...due].filter(n=>!done.has(n)).reduce((s,n)=>s+(Number(P.dur?.[n])||0),0);
+  }
+  let kind='ok';
+  if(!den||(dueK===0&&num===0))kind='idle';
+  else if(num===den)kind='ok';
+  else if(slowMin>240||gap>.15)kind='alert';
+  else if(slowMin>120||gap>.05)kind='risk';
+  return {kind,num,den,pct,planPct,gap,slowMin};
+}
+function ledgerChapterRisk(stu,grade){
+  const judged=chapterModels(stu,grade).filter(m=>['ok','risk','alert'].includes(m.status.kind));
+  if(!judged.length)return {kind:'idle',model:null};
+  judged.sort((a,b)=>ledgerLevel[b.status.kind]-ledgerLevel[a.status.kind]||a.pct-b.pct);
+  return {kind:judged[0].status.kind,model:judged[0]};
+}
+function ledgerStudentMetric(stu,stage=ledgerState.stage){
+  const grade=detectGrade(stu),pass=ledgerStagePass(stu,grade,stage),progress=ledgerStageProgress(stu,grade,stage),chapter=ledgerChapterRisk(stu,grade);
+  const parts=[chapter.kind,pass.kind,progress.kind],max=Math.max(...parts.map(k=>ledgerLevel[k]));
+  const kind=max<0?'idle':parts.find(k=>ledgerLevel[k]===max)||'idle';
+  const reasons=[];
+  if(chapter.model&&ledgerLevel[chapter.kind]===max&&max>0){
+    const n=chapter.model.name.replace(/☽/g,'');
+    reasons.push(`${n} ${chapter.model.pct}%${chapter.kind==='alert'?'，低于85%':'，未达95%'}`);
+  }
+  if(ledgerLevel[pass.kind]===max&&max>0)reasons.push(`已学过关率 ${(pass.pct*100).toFixed(1)}%`);
+  if(ledgerLevel[progress.kind]===max&&max>0){
+    reasons.push(progress.slowMin>120?`计划内待学约 ${(progress.slowMin/60).toFixed(1)}h`:`进度落后计划 ${Math.max(0,Math.round(progress.gap*100))} 个百分点`);
+  }
+  let reason=reasons.slice(0,2).join('；');
+  if(!reason)reason=kind==='idle'?(stage==='fall'?'秋季尚未开始':'暂无可判定数据'):'已判定指标均正常';
+  return {student:stu,grade,kind,pass,progress,reason};
+}
+function ledgerMetricHtml(m,progress=false){
+  const pct=m.den||m.total?m.pct:0,total=progress?m.den:m.total,num=progress?m.num:m.passed;
+  const text=total?`${(pct*100).toFixed(1)}%`:'—',width=Math.max(0,Math.min(100,pct*100));
+  const tick=progress&&total?`<i class="ledger-plan-tick" style="left:${Math.max(0,Math.min(100,m.planPct*100))}%"></i><span class="ledger-plan-label" style="left:${Math.max(4,Math.min(96,m.planPct*100))}%">计划${Math.round(m.planPct*100)}%</span>`:'';
+  return `<div class="ledger-metric kind-${m.kind}"><div class="ledger-metric-top"><strong>${text}</strong><div class="ledger-bar"><span class="ledger-bar-fill" style="width:${width}%"></span>${tick}</div></div><span class="ledger-fraction">${num} / ${total}</span></div>`;
+}
+function ledgerFilteredRows(){
+  const all=studentList().map(n=>ledgerStudentMetric(n));
+  const base=all.filter(r=>ledgerState.grade==='all'||r.grade===ledgerState.grade);
+  const counts={total:base.length,ok:0,risk:0,alert:0,idle:0};base.forEach(r=>counts[r.kind]++);
+  let visible=base.filter(r=>ledgerState.risk==='all'||r.kind===ledgerState.risk);
+  if(ledgerState.needs)visible=visible.filter(r=>r.kind==='risk'||r.kind==='alert');
+  const q=ledgerState.query.trim();if(q)visible=visible.filter(r=>r.student.includes(q));
+  const order={alert:0,risk:1,idle:2,ok:3};visible.sort((a,b)=>order[a.kind]-order[b.kind]||a.grade.localeCompare(b.grade,'zh')||a.student.localeCompare(b.student,'zh'));
+  return {counts,visible};
+}
+function renderLedger(){
+  if(!document.getElementById('ledgerView'))return;
+  const {counts,visible}=ledgerFilteredRows();ledgerState.visible=visible;
+  document.getElementById('ledgerTotal').textContent=counts.total;
+  document.getElementById('ledgerOk').textContent=counts.ok;
+  document.getElementById('ledgerRisk').textContent=counts.risk;
+  document.getElementById('ledgerAlert').textContent=counts.alert;
+  document.getElementById('ledgerIdle').textContent=counts.idle;
+  document.getElementById('ledgerVisibleCount').textContent=`当前显示 ${visible.length} 名学生`;
+  document.getElementById('ledgerRows').innerHTML=visible.length?visible.map(r=>`<tr><td class="ledger-name">${ledgerEscape(r.student)}</td><td>${r.grade}</td><td><span class="ledger-risk-pill kind-${r.kind}">${ledgerText[r.kind]}</span></td><td>${ledgerMetricHtml(r.pass)}</td><td>${ledgerMetricHtml(r.progress,true)}</td><td class="ledger-reason">${ledgerEscape(r.reason)}</td><td><button class="ledger-view-btn" type="button" data-ledger-student="${ledgerEscape(r.student)}">查看</button></td></tr>`).join(''):'<tr><td class="ledger-empty" colspan="7">当前条件下没有学生</td></tr>';
+}
+function openLedger(){
+  ledgerState.stage=state.stage;document.getElementById('ledgerStage').value=ledgerState.stage;
+  document.getElementById('ledgerView').hidden=false;document.body.classList.add('ledger-open');renderLedger();document.getElementById('ledgerClose').focus();
+}
+function closeLedger(){document.getElementById('ledgerView').hidden=true;document.body.classList.remove('ledger-open');document.getElementById('ledgerOpen')?.focus();}
+function exportLedger(){
+  const heads=['学生','年级','学情风险','已学过关率','已过关','已学','学习进度','进度已学','规划总数','计划应到','风险依据'];
+  const rows=ledgerState.visible.map(r=>[r.student,r.grade,ledgerText[r.kind],r.pass.total?(r.pass.pct*100).toFixed(1)+'%':'',r.pass.passed,r.pass.total,r.progress.den?(r.progress.pct*100).toFixed(1)+'%':'',r.progress.num,r.progress.den,r.progress.den?(r.progress.planPct*100).toFixed(1)+'%':'',r.reason]);
+  const cell=v=>`"${String(v??'').replace(/"/g,'""')}"`,csv='\ufeff'+[heads,...rows].map(r=>r.map(cell).join(',')).join('\r\n');
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));a.download=`全体学生台账_${ledgerState.stage==='fall'?'秋季':'暑假'}_${chapterToday()}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),0);
+}
+function initLedger(){
+  const open=document.getElementById('ledgerOpen');if(!open)return;
+  open.onclick=openLedger;document.getElementById('ledgerClose').onclick=closeLedger;
+  document.getElementById('ledgerGrade').onchange=e=>{ledgerState.grade=e.target.value;renderLedger();};
+  document.getElementById('ledgerStage').onchange=e=>{ledgerState.stage=e.target.value;renderLedger();};
+  document.getElementById('ledgerRiskFilter').onchange=e=>{ledgerState.risk=e.target.value;renderLedger();};
+  document.getElementById('ledgerSearch').oninput=e=>{ledgerState.query=e.target.value;renderLedger();};
+  document.getElementById('ledgerNeeds').onchange=e=>{ledgerState.needs=e.target.checked;renderLedger();};
+  document.getElementById('ledgerExport').onclick=exportLedger;
+  document.getElementById('ledgerRows').onclick=e=>{const b=e.target.closest('[data-ledger-student]');if(!b)return;state.student=b.dataset.ledgerStudent;state.stage=ledgerState.stage;closeLedger();renderAll();window.scrollTo({top:0,behavior:'smooth'});};
+  document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!document.getElementById('ledgerView').hidden)closeLedger();});
+  openLedger();
+}
+initLedger();
+/* 全体学生台账逻辑结束 */
 function renderAll(){
+  /* 台账刷新钩子 */
+  if(document.getElementById('ledgerView')&&!document.getElementById('ledgerView').hidden)setTimeout(renderLedger,0);
   const list=studentList();
   if(!list.length){
     document.getElementById('stuMeta').innerHTML='';
