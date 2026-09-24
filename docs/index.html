@@ -596,6 +596,8 @@ body.ledger-open{overflow:hidden}
 @media(max-width:640px){.ledger-wrap{padding:16px 10px 36px}.ledger-header h1{font-size:21px}.ledger-summary{gap:8px}.ledger-stat{padding:12px 14px}.ledger-stat strong{font-size:23px}.ledger-controls{gap:9px}.ledger-field{flex:1}.ledger-field select{width:100%}.ledger-search{max-width:none;width:100%;flex-basis:100%}}
 /* 全体学生台账样式结束 */
 .pace-comparison{font-size:12px;color:var(--ink-mid);line-height:1.6;margin-top:5px;min-height:19px}
+/* 秋季计划刻度留白 */
+@media(min-width:641px){#fallCards .card:last-child .rate-flex{column-gap:60px}}
 </style>
 </head>
 <body>
@@ -3212,16 +3214,21 @@ function ledgerCumulativeProgress(stu,grade){
   const due=new Set();
   summerLessons.slice(0,summerK).forEach(l=>(l.names||[]).forEach(n=>{if(summerNames.has(n))due.add(n)}));
   midLessons.slice(0,fallK).forEach(l=>(l.names||[]).forEach(n=>{if(midNames.has(n))due.add(n)}));
-  const num=[...target].filter(n=>learned.has(n)).length,den=target.size,pct=ledgerPct(num,den),planPct=ledgerPct(due.size,den),gap=planPct-pct;
-  const missing=[...due].filter(n=>!learned.has(n));
+  // 秋季规划中的历史已过关题模免补；暑秋累计已学不变，且不得重复扣除。
+  const historicalPassed=paceHistoricalPassed(stu,fallStart);
+  const exempt=[...due].filter(n=>midNames.has(n)&&!learned.has(n)&&historicalPassed.has(n));
+  const exemptSet=new Set(exempt);
+  const num=[...target].filter(n=>learned.has(n)).length,den=target.size,pct=ledgerPct(num,den),planPct=ledgerPct(due.size-exempt.length,den),gap=planPct-pct;
+  const missing=[...due].filter(n=>!learned.has(n)&&!exemptSet.has(n));
   // 重复题模只取一个时长；秋季期中前的最新规划优先，不叠加暑秋时长。
   const duration=n=>{const v=(midNames.has(n)?fall:summer)?.dur?.[n];return v!==null&&v!==''&&Number.isFinite(Number(v))&&Number(v)>=0?Number(v):null;};
   const slowMin=missing.every(n=>duration(n)!==null)?missing.reduce((s,n)=>s+duration(n),0):null;
+  const excludedMinutes=exempt.every(n=>duration(n)!==null)?exempt.reduce((s,n)=>s+duration(n),0):null;
   let kind='ok';
   if(!den||(!num&&!due.size)||unknownFall)kind='idle';
   else if(gap>0){if(slowMin>240||gap>.15)kind='alert';else if(slowMin>120||gap>.05)kind='risk';}
   return {kind,num,den,pct,planPct,gap,slowMin,lessonMin:paceLessonMinutes(),addLessons:gap>0?paceExtraLessons(slowMin):0,
-    dueK:summerK+fallK,summerK,fallK,missingCount:missing.length,unavailable:unknownFall};
+    dueK:summerK+fallK,summerK,fallK,missingCount:missing.length,unavailable:unknownFall,excludedCount:exempt.length,excludedMinutes};
 }
 const ledgerState={stage:'cumulative',grade:'all',risk:'all',query:'',needs:false,visible:[]};
 const ledgerLevel={idle:-1,ok:0,risk:1,alert:2};
@@ -3238,21 +3245,41 @@ function fallPaceInfo(stu,grade){
   const attended=new Set(rows.flatMap(recordDays).filter(d=>d>=start)).size;
   const dueK=Math.min(attended,lessons.length),due=new Set();
   for(let k=0;k<dueK;k++)for(const n of lessons[k].names||[])if(target.has(n))due.add(n);
-  // 已学未过关也算完成学习；规划后面的提前学习不能抵扣前面未学的题模。
-  const missing=[...due].filter(n=>!learned.has(n));
+  // 历史明确过关且最新仍过关的题模免补；不改导入总数或本阶段已学数。
+  const historicalPassed=paceHistoricalPassed(stu,start);
+  const exempt=[...due].filter(n=>!learned.has(n)&&historicalPassed.has(n));
+  const exemptSet=new Set(exempt);
+  const missing=[...due].filter(n=>!learned.has(n)&&!exemptSet.has(n));
   const validDuration=n=>P.dur[n]!==null&&P.dur[n]!==''&&Number.isFinite(Number(P.dur[n]))&&Number(P.dur[n])>=0;
   const durationComplete=missing.every(validDuration);
   const slowMin=durationComplete?missing.reduce((s,n)=>s+Number(P.dur[n]),0):null;
-  const den=target.size,num=learned.size,pct=den?num/den:0,planPct=den?due.size/den:0,gap=planPct-pct;
+  const excludedMinutes=exempt.every(validDuration)?exempt.reduce((s,n)=>s+Number(P.dur[n]),0):null;
+  const effectiveDue=due.size-exempt.length;
+  const den=target.size,num=learned.size,pct=den?num/den:0,planPct=den?effectiveDue/den:0,gap=planPct-pct;
   // 总量达标/超前时，前 K 课的漏项仅提示待补，不能称为整体落后或建议加课。
-  const behind=num<due.size,lessonMin=paceLessonMinutes();
+  const behind=num<effectiveDue,lessonMin=paceLessonMinutes();
   const addLessons=behind?paceExtraLessons(slowMin):0;
   let kind='ok';
   if(!den||(!dueK&&!num))kind='idle';
   else if(num===den||!behind)kind='ok';
   else if(slowMin>240||gap>.15)kind='alert';
   else if(slowMin>120||gap>.05)kind='risk';
-  return {kind,num,den,pct,planPct,gap,slowMin,lessonMin,addLessons,dueK,missingCount:missing.length};
+  return {kind,num,den,pct,planPct,gap,slowMin,lessonMin,addLessons,dueK,missingCount:missing.length,
+    excludedCount:exempt.length,excludedMinutes};
+}
+// 需要明确的阶段前过关证据，不能仅凭 fullLearned 或旧的“学过”推断过关。
+// 重复记录按最新日期判定；后续转为未过关则撤销豁免，同日冲突保守保留待补。
+function paceHistoricalPassed(stu,start){
+  const priorPassed=new Set(),latest=new Map();
+  for(const r of records){
+    if(r.n!==stu)continue;
+    const ds=recordDays(r),date=[r.dt,...ds].filter(Boolean).sort().at(-1)||'';
+    if(!date)continue;
+    if(date<start&&ds.some(d=>d<start)&&r.p===1)priorPassed.add(r.m);
+    const prev=latest.get(r.m);
+    if(!prev||date>prev.date||(date===prev.date&&r.p!==1))latest.set(r.m,{date,p:r.p});
+  }
+  return new Set([...priorPassed].filter(n=>latest.get(n)?.p===1));
 }
 // 个人秋季规划总数：导入课次明细中的题模，按当前年级目录筛选后去重。
 // 不减去历史已学，不加上规划外已学；重复课次/二遍学习只计一个题模。
@@ -3276,7 +3303,8 @@ function fallPaceLabel(p){
 function paceLessonMinutes(){return 130;}
 function paceExtraLessons(minutes){return Number.isFinite(minutes)&&minutes>0?Math.ceil(minutes/paceLessonMinutes()):0;}
 function fallPaceTitle(p){
-  const basis=`按已上 ${p.dueK} 次课对比计划；每次课 ${p.lessonMin} 分钟（2小时10分钟，约 ${(p.lessonMin/60).toFixed(2)} 小时）。`;
+  const exclusion=p.excludedCount?`已排除历史已过关 ${p.excludedCount} 个题模${p.excludedMinutes===null?'':`（${p.excludedMinutes} 分钟）` }，不计入待补时长和计划对比目标；规划总数、已学数不变。`:'';
+  const basis=`按已上 ${p.dueK} 次课对比计划；每次课 ${p.lessonMin} 分钟（2小时10分钟，约 ${(p.lessonMin/60).toFixed(2)} 小时）。`+exclusion;
   if(p.gap<=0&&p.missingCount)return basis+'总进度已达标，前面课程的待补题模单独提醒，不据此建议加课。';
   if(p.slowMin===null)return basis+'部分待补题模缺少计划时长，暂不折算小时或加课次数。';
   return basis+'待补题模时长合计按每次课时长向上取整折算加课次数；次数使用未四舍五入的分钟数计算。';
