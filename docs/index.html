@@ -1263,9 +1263,7 @@ function renderFallCards(stu, grade){
   ptb.textContent=fallPaceLabel(pace);
   ptb.className='title-badge '+(pace.kind==='alert'?'bad':pace.kind==='risk'?'warn':pace.kind==='ok'?'ok':'neutral');
   document.getElementById('ringPaceF').style.stroke=pace.kind==='alert'?'var(--fail)':pace.kind==='risk'?'#D9A21B':pace.kind==='idle'?'var(--ink-faint)':'var(--pass)';
-  ptb.title=pace.slowMin===null?'部分应学未学题模缺少计划时长，暂无法折算小时':pace.averageMin>0
-    ?'按已上 '+dueK+' 次课对比计划；应学未学题模时长合计，按平均每课 '+pace.averageMin.toFixed(1)+' 分钟向上取整折算加课次数'
-    :'按已上课次对应的计划计算；平均每课时长不足，暂不折算加课次数';
+  ptb.title=fallPaceTitle(pace);
 }
 
 function renderPaceStat(stu, grade){
@@ -1337,7 +1335,7 @@ function renderPaceStat(stu, grade){
     ptb.textContent='已完成';
   } else if(slowMin>240){
     ring.style.stroke='var(--fail)';
-    const addN = avgLessonMin>0? Math.max(1, Math.ceil(slowMin/avgLessonMin)) : 0;
+    const addN = paceExtraLessons(slowMin);
     ptb.className='title-badge bad';
     ptb.textContent=`建议加课 · 慢 ${(slowMin/60).toFixed(1)}h${addN?` · 加课 ${addN} 次`:''}`;
   } else if(slowMin>120){
@@ -3176,22 +3174,35 @@ function fallPaceInfo(stu,grade){
   const validDuration=n=>P.dur[n]!==null&&P.dur[n]!==''&&Number.isFinite(Number(P.dur[n]))&&Number(P.dur[n])>=0;
   const durationComplete=missing.every(validDuration);
   const slowMin=durationComplete?missing.reduce((s,n)=>s+Number(P.dur[n]),0):null;
-  const averageMin=lessons.length&&[...target].every(validDuration)
-    ?[...target].reduce((s,n)=>s+Number(P.dur[n]),0)/lessons.length:0;
-  const addLessons=slowMin>0&&averageMin>0?Math.ceil(slowMin/averageMin):0;
   const den=target.size,num=learned.size,pct=den?num/den:0,planPct=den?due.size/den:0,gap=planPct-pct;
+  // 总量达标/超前时，前 K 课的漏项仅提示待补，不能称为整体落后或建议加课。
+  const behind=num<due.size,lessonMin=paceLessonMinutes();
+  const addLessons=behind?paceExtraLessons(slowMin):0;
   let kind='ok';
   if(!den||(!dueK&&!num))kind='idle';
-  else if(num===den)kind='ok';
+  else if(num===den||!behind)kind='ok';
   else if(slowMin>240||gap>.15)kind='alert';
   else if(slowMin>120||gap>.05)kind='risk';
-  return {kind,num,den,pct,planPct,gap,slowMin,averageMin,addLessons,dueK,missingCount:missing.length};
+  return {kind,num,den,pct,planPct,gap,slowMin,lessonMin,addLessons,dueK,missingCount:missing.length};
 }
 function fallPaceLabel(p){
-  if(p.slowMin>0)return `慢 ${(p.slowMin/60).toFixed(1)}h${p.addLessons?` · 建议加课 ${p.addLessons} 次`:''}`;
   if(p.kind==='idle')return '暂未判定';
   if(p.num===p.den&&p.den)return '已完成';
+  if(p.gap<=0){
+    const status=p.gap<0?'进度超前':'进度达标';
+    return p.missingCount?`${status} · 待补 ${p.missingCount} 模${p.slowMin===null?'（时长待补全）':`（${(p.slowMin/60).toFixed(1)}h）`}`:status;
+  }
+  if(p.slowMin>0)return `慢 ${(p.slowMin/60).toFixed(1)}h${p.addLessons?` · 建议加课 ${p.addLessons} 次`:''}`;
+  if(p.slowMin===null)return `进度落后 · 待补 ${p.missingCount} 模（时长待补全）`;
   return p.kind==='alert'?'需关注':p.kind==='risk'?'较慢':'正常';
+}
+function paceLessonMinutes(){return 130;}
+function paceExtraLessons(minutes){return Number.isFinite(minutes)&&minutes>0?Math.ceil(minutes/paceLessonMinutes()):0;}
+function fallPaceTitle(p){
+  const basis=`按已上 ${p.dueK} 次课对比计划；每次课 ${p.lessonMin} 分钟（2小时10分钟，约 ${(p.lessonMin/60).toFixed(2)} 小时）。`;
+  if(p.gap<=0&&p.missingCount)return basis+'总进度已达标，前面课程的待补题模单独提醒，不据此建议加课。';
+  if(p.slowMin===null)return basis+'部分待补题模缺少计划时长，暂不折算小时或加课次数。';
+  return basis+'待补题模时长合计按每次课时长向上取整折算加课次数；次数使用未四舍五入的分钟数计算。';
 }
 function ledgerStagePass(stu,grade,stage){
   const t=TREE[grade],start=stage==='fall'?fallFirstLessonDate(stu):firstLessonDate(stu);
@@ -3275,7 +3286,7 @@ function ledgerStudentMetric(stu,stage=ledgerState.stage){
     reasons.push(stage==='fall'&&progress.slowMin>0?fallPaceLabel(progress):progress.slowMin>120?`计划内待学约 ${(progress.slowMin/60).toFixed(1)}h`:`进度落后计划 ${Math.max(0,Math.round(progress.gap*100))} 个百分点`);
   }
   let reason=reasons.slice(0,2).join('；');
-  if(!reason)reason=kind==='idle'?(stage==='fall'?'秋季尚未开始':'暂无可判定数据'):'已判定指标均正常';
+  if(!reason)reason=stage==='fall'&&progress.gap<=0&&progress.missingCount?fallPaceLabel(progress):kind==='idle'?(stage==='fall'?'秋季尚未开始':'暂无可判定数据'):'已判定指标均正常';
   return {student:stu,grade,kind,pass,progress,reason};
 }
 function ledgerMetricHtml(m,progress=false){
