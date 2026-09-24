@@ -555,6 +555,8 @@ body.ledger-open{overflow:hidden}
 .ledger-field{display:flex;align-items:center;gap:7px;color:var(--ink-mid);font-size:12px}
 .ledger-field select,.ledger-search{border:1px solid var(--line);border-radius:7px;background:#fff;color:var(--ink);font:inherit;padding:8px 10px}
 .ledger-field select{min-width:104px}
+.teaching-week-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:12px 0;color:var(--ink-mid)}
+.teaching-week-bar small{font-size:11px;color:var(--ink-faint)}
 .ledger-search{min-width:210px;flex:1;max-width:330px;font-size:13px}
 .ledger-check{display:flex;align-items:center;gap:7px;color:var(--ink);font-size:13px;white-space:nowrap}
 .ledger-check input{accent-color:var(--actual)}
@@ -621,6 +623,7 @@ body.ledger-open{overflow:hidden}
     </div>
   </header>
 
+  <div class="teaching-week-bar"><label class="ledger-field">秋季应完成周次<select id="personalTeachingWeek" aria-label="秋季应完成周次"></select></label><small>前半段共9周 · 不随出勤回退 · 当前浏览器保存</small></div>
   <div class="student-bar">
     <div class="label">选择学生</div>
     <div class="stu-select" id="stuSelect">
@@ -797,6 +800,7 @@ body.ledger-open{overflow:hidden}
       <div class="ledger-stat kind-idle"><span>暂未判定</span><strong id="ledgerIdle">0</strong></div>
     </div>
     <div class="ledger-controls">
+      <label class="ledger-field" title="秋季前半段统一应完成周次；9周为标准，多出的课次前置。保存于当前浏览器。">秋季应完成周次<select id="ledgerTeachingWeek" aria-label="秋季应完成周次"></select></label>
       <label class="ledger-field">年级<select id="ledgerGrade"><option value="all">全部</option><option>初一</option><option>初二</option><option>初三</option></select></label>
       <label class="ledger-field">风险状态<select id="ledgerRiskFilter"><option value="all">全部</option><option value="alert">预警</option><option value="risk">有风险</option><option value="ok">正常</option><option value="idle">暂未判定</option></select></label>
       <input class="ledger-search" id="ledgerSearch" type="search" placeholder="搜索学生姓名" autocomplete="off">
@@ -3201,16 +3205,16 @@ function ledgerCumulativeProgress(stu,grade){
   const summer=plans[stu],fall=plansFall[stu],t=TREE[grade];
   const summerLessons=summer?.lessons||[],fallLessons=fall?.lessons||[];
   const midLessons=fallLessons.filter(l=>/期中前|前半段/.test(String(l.stage||'')));
-  const unknownFall=!!fallLessons.length&&fallLessons.some(l=>!/期中前|前半段|期末前|后半段/.test(String(l.stage||'')));
+  const schedule=fallWeekSchedule(fall),unknownFall=schedule.unavailable;
   const counted=(P,n)=>t.byName.has(n)&&!PLAN_SKIP_TYPES.has(P?.types?.[n]);
   const summerNames=new Set(Object.keys(summer?.dur||{}).filter(n=>counted(summer,n)));
   const midNames=new Set(midLessons.flatMap(l=>l.names||[]).filter(n=>counted(fall,n)));
   const target=new Set([...summerNames,...midNames]),learned=ledgerLatestLearned(stu);
   const bounds=ledgerTermBounds(stu),fallStart=fallLessons[0]?.date||`${bounds.start.slice(0,4)}-09-01`;
-  // 课次对位仍按实际学习日期，不把尚未上的下一课提前算作落后。
+  // 暑期维持原口径；秋季按统一教学周，不因缺课回退计划目标。
   const allDays=[...new Set([...learned.values()].flatMap(x=>[...x.days]))];
   const summerK=Math.min(allDays.filter(d=>d<fallStart&&d>=(summerLessons[0]?.date||bounds.start)).length,summerLessons.length);
-  const fallK=Math.min(allDays.filter(d=>d>=fallStart).length,midLessons.length);
+  const fallK=schedule.dueK;
   const due=new Set();
   summerLessons.slice(0,summerK).forEach(l=>(l.names||[]).forEach(n=>{if(summerNames.has(n))due.add(n)}));
   midLessons.slice(0,fallK).forEach(l=>(l.names||[]).forEach(n=>{if(midNames.has(n))due.add(n)}));
@@ -3228,7 +3232,8 @@ function ledgerCumulativeProgress(stu,grade){
   if(!den||(!num&&!due.size)||unknownFall)kind='idle';
   else if(gap>0){if(slowMin>240||gap>.15)kind='alert';else if(slowMin>120||gap>.05)kind='risk';}
   return {kind,num,den,pct,planPct,gap,slowMin,lessonMin:paceLessonMinutes(),addLessons:gap>0?paceExtraLessons(slowMin):0,
-    dueK:summerK+fallK,summerK,fallK,missingCount:missing.length,unavailable:unknownFall,excludedCount:exempt.length,excludedMinutes};
+    dueK:summerK+fallK,summerK,fallK,missingCount:missing.length,unavailable:unknownFall,excludedCount:exempt.length,excludedMinutes,
+    week:schedule.week,midCount:schedule.midCount,scheduleReason:schedule.reason};
 }
 const ledgerState={stage:'cumulative',grade:'all',risk:'all',query:'',needs:false,visible:[]};
 const ledgerLevel={idle:-1,ok:0,risk:1,alert:2};
@@ -3236,15 +3241,14 @@ const ledgerText={idle:'暂未判定',ok:'正常',risk:'有风险',alert:'预警
 function ledgerEscape(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function ledgerPct(n,d){return d?n/d:0;}
 function ledgerRateKind(pct,total){return !total?'idle':pct>=.9?'ok':pct>=.8?'risk':'alert';}
-// 个人秋季卡片和台账共用：已上第 K 课只比较计划前 K 课，不提前计入未上的课。
+// 统一教学周决定应到课次，学生缺课不降低计划目标。
 function fallPaceInfo(stu,grade){
   const P=plansFall[stu],t=TREE[grade],start=fallFirstLessonDate(stu);
   const target=fallPlanModelSet(stu,grade);
   const rows=records.filter(r=>r.n===stu&&target.has(r.m)&&recordDays(r).some(d=>d>=start));
-  const learned=new Set(rows.map(r=>r.m)),lessons=P?.lessons||[];
-  const attended=new Set(rows.flatMap(recordDays).filter(d=>d>=start)).size;
-  const dueK=Math.min(attended,lessons.length),due=new Set();
-  for(let k=0;k<dueK;k++)for(const n of lessons[k].names||[])if(target.has(n))due.add(n);
+  const learned=new Set(rows.map(r=>r.m)),schedule=fallWeekSchedule(P);
+  const {dueK}=schedule,due=new Set();
+  for(const lesson of schedule.dueLessons)for(const n of lesson.names||[])if(target.has(n))due.add(n);
   // 历史明确过关且最新仍过关的题模免补；不改导入总数或本阶段已学数。
   const historicalPassed=paceHistoricalPassed(stu,start);
   const exempt=[...due].filter(n=>!learned.has(n)&&historicalPassed.has(n));
@@ -3260,12 +3264,51 @@ function fallPaceInfo(stu,grade){
   const behind=num<effectiveDue,lessonMin=paceLessonMinutes();
   const addLessons=behind?paceExtraLessons(slowMin):0;
   let kind='ok';
-  if(!den||(!dueK&&!num))kind='idle';
+  if(!den||(!dueK&&!num)||schedule.unavailable)kind='idle';
   else if(num===den||!behind)kind='ok';
   else if(slowMin>240||gap>.15)kind='alert';
   else if(slowMin>120||gap>.05)kind='risk';
   return {kind,num,den,pct,planPct,gap,slowMin,lessonMin,addLessons,dueK,missingCount:missing.length,
-    excludedCount:exempt.length,excludedMinutes};
+    excludedCount:exempt.length,excludedMinutes,week:schedule.week,midCount:schedule.midCount,
+    unavailable:schedule.unavailable,scheduleReason:schedule.reason};
+}
+function fallWeekStorageKey(){
+  const stamp=typeof RAW!=='undefined'?String(RAW.generatedAt||''):'';
+  const year=Number(stamp.slice(0,4))||new Date().getFullYear();
+  return 'math-dashboard-fall-teaching-week-'+(Number(stamp.slice(5,7))<3&&stamp?year-1:year);
+}
+function fallTeachingWeek(){
+  if(Number.isInteger(fallTeachingWeek.override))return fallTeachingWeek.override;
+  try{const raw=localStorage.getItem(fallWeekStorageKey()),n=Number(raw);if(raw!==null&&raw!==''&&Number.isInteger(n)&&n>=0&&n<=9)return n;}catch{}
+  return 3;
+}
+function fallWeekSchedule(plan,week=fallTeachingWeek()){
+  const lessons=plan?.lessons||[],mid=lessons.filter(l=>/期中前|前半段/.test(String(l.stage||'')));
+  const unknown=lessons.some(l=>!/期中前|前半段|期末前|后半段/.test(String(l.stage||'')));
+  const unavailable=unknown||mid.length>18;
+  const reason=unknown?'秋季前后半段标识缺失':mid.length>18?'秋季前半段超过18次，需确认排课节奏':'';
+  // 9个教学周；多出的课次前置，每周最多额外1次，9周内完成。
+  const dueK=unavailable?0:Math.min(mid.length,week+Math.min(week,Math.max(0,mid.length-9)));
+  return {week,midCount:mid.length,dueK,dueLessons:mid.slice(0,dueK),unavailable,reason};
+}
+function syncFallWeekControls(){
+  for(const id of ['ledgerTeachingWeek','personalTeachingWeek']){
+    const el=document.getElementById(id);if(!el)continue;
+    el.innerHTML=Array.from({length:10},(_,w)=>`<option value="${w}">${w?'第'+w+'周':'尚未开始'}</option>`).join('');
+    el.value=String(fallTeachingWeek());
+  }
+}
+function initFallWeekControls(){
+  syncFallWeekControls();
+  for(const id of ['ledgerTeachingWeek','personalTeachingWeek']){
+    const el=document.getElementById(id);if(!el)continue;
+    el.onchange=e=>{
+      const week=Number(e.target.value);if(!Number.isInteger(week)||week<0||week>9)return;
+      fallTeachingWeek.override=week;
+      try{localStorage.setItem(fallWeekStorageKey(),String(week));}catch{}
+      syncFallWeekControls();renderAll();renderLedger();
+    };
+  }
 }
 // 需要明确的阶段前过关证据，不能仅凭 fullLearned 或旧的“学过”推断过关。
 // 重复记录按最新日期判定；后续转为未过关则撤销豁免，同日冲突保守保留待补。
@@ -3290,6 +3333,7 @@ function fallPlanModelSet(stu,grade){
   return new Set(names.filter(n=>catalog?.has(n)));
 }
 function fallPaceLabel(p){
+  if(p.unavailable)return '排课待确认';
   if(p.kind==='idle')return '暂未判定';
   if(p.num===p.den&&p.den)return '已完成';
   if(p.gap<=0){
@@ -3304,14 +3348,16 @@ function paceLessonMinutes(){return 130;}
 function paceExtraLessons(minutes){return Number.isFinite(minutes)&&minutes>0?Math.ceil(minutes/paceLessonMinutes()):0;}
 function fallPaceTitle(p){
   const exclusion=p.excludedCount?`已排除历史已过关 ${p.excludedCount} 个题模${p.excludedMinutes===null?'':`（${p.excludedMinutes} 分钟）` }，不计入待补时长和计划对比目标；规划总数、已学数不变。`:'';
-  const basis=`按已上 ${p.dueK} 次课对比计划；每次课 ${p.lessonMin} 分钟（2小时10分钟，约 ${(p.lessonMin/60).toFixed(2)} 小时）。`+exclusion;
+  const basis=`按统一第 ${p.week} 周对比秋季前 ${p.fallK??p.dueK} 次计划课，不随实际出勤回退；每次课 ${p.lessonMin} 分钟（2小时10分钟，约 ${(p.lessonMin/60).toFixed(2)} 小时）。`+exclusion;
+  if(p.unavailable)return p.scheduleReason||'秋季排课待确认';
   if(p.gap<=0&&p.missingCount)return basis+'总进度已达标，前面课程的待补题模单独提醒，不据此建议加课。';
   if(p.slowMin===null)return basis+'部分待补题模缺少计划时长，暂不折算小时或加课次数。';
   return basis+'待补题模时长合计按每次课时长向上取整折算加课次数；次数使用未四舍五入的分钟数计算。';
 }
 function personalFallComparison(p){
-  if(!p.dueK)return '尚无秋季课次可对比';
-  const basis=`对比秋季计划第 ${p.dueK} 次课（累计前 ${p.dueK} 次课）：`;
+  if(p.unavailable)return p.scheduleReason+'，暂不判定计划进度';
+  if(!p.dueK)return p.week?'未安排秋季前半段课次':'秋季前半段尚未开始';
+  const basis=`第 ${p.week} 周应完成秋季计划第 ${p.dueK} 次课（累计前 ${p.dueK} 次课）：`;
   if(p.gap>0&&p.slowMin>0)return basis+`慢 ${(p.slowMin/60).toFixed(1)}h`;
   return basis+fallPaceLabel({...p,addLessons:0});
 }
@@ -3332,8 +3378,8 @@ function ledgerStudentMetric(stu,stage=ledgerState.stage){
   // 没有累计有效学习证据时，不让历史章节状态覆盖为正常。
   const stageEmpty=pass.total===0&&progress.num===0;
   if(stageEmpty){
-    const reason='暂无暑假及秋季可判定学情';
-    return {student:stu,grade,kind:'idle',pass,progress,reason};
+    const kind=progress.kind,reason=progress.unavailable?(progress.scheduleReason+'，排课待确认'):kind==='idle'?'暂无暑假及秋季可判定学情':`暂无本学期已学记录；${fallPaceLabel(progress)}`;
+    return {student:stu,grade,kind,pass,progress,reason};
   }
   const parts=[chapter.kind,pass.kind,progress.kind],max=Math.max(...parts.map(k=>ledgerLevel[k]));
   const kind=max<0?'idle':parts.find(k=>ledgerLevel[k]===max)||'idle';
@@ -3347,12 +3393,12 @@ function ledgerStudentMetric(stu,stage=ledgerState.stage){
     reasons.push(progress.slowMin>0?fallPaceLabel(progress):`进度落后计划 ${Math.max(0,Math.round(progress.gap*100))} 个百分点`);
   }
   let reason=reasons.slice(0,2).join('；');
-  if(progress.unavailable)reason=[reason,'秋季前后半段标识缺失，进度暂不可判定'].filter(Boolean).join('；');
+  if(progress.unavailable)reason=[reason,progress.scheduleReason+'，进度暂不可判定'].filter(Boolean).join('；');
   if(!reason)reason=progress.gap<=0&&progress.missingCount?fallPaceLabel(progress):kind==='idle'?'暂无可判定数据':'已判定指标均正常';
   return {student:stu,grade,kind,pass,progress,reason};
 }
 function ledgerMetricHtml(m,progress=false){
-  if(m.unavailable)return '<div class="ledger-metric kind-idle"><strong>—</strong><span class="ledger-fraction">阶段标识缺失</span></div>';
+  if(m.unavailable)return '<div class="ledger-metric kind-idle"><strong>—</strong><span class="ledger-fraction">排课待确认</span></div>';
   const pct=m.den||m.total?m.pct:0,total=progress?m.den:m.total,num=progress?m.num:m.passed;
   const text=total?`${(pct*100).toFixed(1)}%`:'—',width=Math.max(0,Math.min(100,pct*100));
   const tick=progress&&total?`<i class="ledger-plan-tick" style="left:${Math.max(0,Math.min(100,m.planPct*100))}%"></i><span class="ledger-plan-label" style="left:${Math.max(4,Math.min(96,m.planPct*100))}%">计划${Math.round(m.planPct*100)}%</span>`:'';
@@ -3391,6 +3437,7 @@ function exportLedger(){
 }
 function initLedger(){
   const open=document.getElementById('ledgerOpen');if(!open)return;
+  initFallWeekControls();
   open.onclick=openLedger;document.getElementById('ledgerClose').onclick=closeLedger;
   document.getElementById('ledgerGrade').onchange=e=>{ledgerState.grade=e.target.value;renderLedger();};
   document.getElementById('ledgerRiskFilter').onchange=e=>{ledgerState.risk=e.target.value;renderLedger();};
