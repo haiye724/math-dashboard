@@ -23,6 +23,9 @@ tbody tr.row-unlearned td{background:#FFF8E6}
 .status-failed{color:#A9362A;background:#FFE4DF;border-color:#DE8E82}
 .status-unlearned{color:#875300;background:#FFEAB8;border-color:#D5A343}
 
+.plan-scope{display:inline-block;white-space:nowrap;font-size:12px;color:var(--mid)}
+.scope-outside{color:#654981;background:#F3EEF8;border:1px solid #B8A4CC;border-radius:4px;padding:2px 6px;font-weight:600}
+.scope-unknown{color:#7C8793}
 </style>
 </head>
 <body>
@@ -85,6 +88,15 @@ function corePlanModule(P,n,t){
 }
 function studySets(stu,start){const current=new Set(),prior=new Set(),names=new Set();for(const r of DATA.records||[]){if(r.n!==stu)continue;names.add(r.m);const ds=days(r);if(ds.some(d=>d>=start))current.add(r.m);if(ds.some(d=>d<start))prior.add(r.m)}for(const n of DATA.fullLearned?.[stu]||[])if(!names.has(n))prior.add(n);return{current,prior}}
 function rowPlace(t,name){const i=t.byName.get(name),r=i===undefined?{}:t.rows[i]||{};return{idx:i??99999,chapter:String(r.c||'').replace(/☽/g,''),section:String(r.s||'').replace(/☽/g,'')}}
+function detailPlanScope(P,name){
+  if(!P||Array.isArray(P))return 'unknown';
+  return Object.prototype.hasOwnProperty.call(P.dur||{},name)||(P.lessons||[]).some(l=>(l.names||[]).includes(name))?'inside':'outside';
+}
+function detailScopeHtml(r){
+  const label=r.scope==='outside'?(r.stage==='fall'?'秋季规划外':'暑假规划外'):r.scope==='inside'?'规划内':'未导入规划';
+  const title=r.scope==='outside'?'该题模不在当前最新阶段规划内，可能是规划调整后移除的已学内容。':'按当前所选阶段的最新规划判断。';
+  return '<span class="plan-scope scope-'+r.scope+'" title="'+title+'">'+label+'</span>';
+}
 function compute(stage=state.stage){const stu=state.student,grade=gradeOf(stu),t=TREES[grade],start=stage==='fall'?fallDate(stu):firstDate(stu),end=stage==='summer'&&DATA.plansFall?.[stu]?fallDate(stu):null,inStage=d=>d&&d>=start&&(!end||d<end);const learned=[];for(const r of DATA.records||[]){if(r.n!==stu)continue;const ds=days(r).filter(inStage).sort();if(!ds.length)continue;const p=rowPlace(t,r.m);learned.push({...p,module:r.m,pass:!!r.p,pre:r.pre||'',dates:ds.join('、'),sort:ds[0],record:r})}learned.sort((a,b)=>a.sort.localeCompare(b.sort)||a.idx-b.idx);
   const P=stage==='fall'?DATA.plansFall?.[stu]:DATA.plans?.[stu],unlearned=[];
   let plannedPass={passed:0,total:0};
@@ -97,11 +109,12 @@ function compute(stage=state.stage){const stu=state.student,grade=gradeOf(stu),t
     for(const n of Object.keys(P.dur||{})){if(!planCounted(P,n,t)||current.has(n)||prior.has(n))continue;const p=rowPlace(t,n),ls=lm.get(n)||[];unlearned.push({...p,module:n,type:P.types[n]||'',dur:Number(P.dur[n])||0,lesson:ls.map(x=>`第${x.no}课`).join('、'),date:[...new Set(ls.map(x=>x.date).filter(Boolean))].join('、'),sort:ls[0]?.no||9999})}
     unlearned.sort((a,b)=>a.sort-b.sort||a.idx-b.idx)
   }
+  learned.forEach(r=>{r.scope=detailPlanScope(P,r.module);r.stage=stage;});
   return{grade,start,end,learned,unlearned,plannedPass,hasPlan:!!P}}
-function filter(rows){const k=state.search.trim().toLowerCase();return k?rows.filter(r=>[r.module,r.chapter,r.section,r.lesson,r.date].some(x=>String(x||'').toLowerCase().includes(k))):rows}
+function filter(rows){const k=state.search.trim().toLowerCase();return k?rows.filter(r=>[r.module,r.chapter,r.section,r.lesson,r.date,r.scope==='outside'?'规划外':''].some(x=>String(x||'').toLowerCase().includes(k))):rows}
 function render(){const x=compute(),pass=x.plannedPass;$('studentName').textContent=state.student;$('learnedCount').textContent=x.learned.length;$('unlearnedCount').textContent=x.hasPlan?x.unlearned.length:'—';$('plannedPassRate').textContent=x.hasPlan&&pass.total?`${(pass.passed/pass.total*100).toFixed(1)}%`:'—';$('plannedPassCount').textContent=x.hasPlan?`过关 ${pass.passed} / ${pass.total} 模`:'未导入规划';$('summer').classList.toggle('on',state.stage==='summer');$('fall').classList.toggle('on',state.stage==='fall');$('tabLearned').classList.toggle('on',state.tab==='learned');$('tabUnlearned').classList.toggle('on',state.tab==='unlearned');$('tabLearned').textContent=`已学 ${x.learned.length}`;$('tabUnlearned').textContent=`未学 ${x.hasPlan?x.unlearned.length:'—'}`;$('export').textContent=state.stage==='fall'?'导出秋季':'导出暑假';$('export').disabled=!x.hasPlan;
   const rows=filter(state.tab==='learned'?x.learned:x.unlearned);if(state.tab==='unlearned'&&!x.hasPlan){$('content').innerHTML='<div class="empty">该学生尚未导入当前阶段规划，无法计算未学题模。</div>';return}if(!rows.length){$('content').innerHTML='<div class="empty">当前条件下没有数据。</div>';return}
-  if(state.tab==='learned'){$('content').innerHTML=`<table><thead><tr><th>学习日期</th><th>章节</th><th>章/节/专题</th><th>题模名称</th><th>是否过关</th><th>前测</th></tr></thead><tbody>${rows.map(r=>`<tr class="${r.pass?'row-passed':'row-failed'}"><td>${esc(r.dates)}</td><td>${esc(r.chapter)}</td><td>${esc(r.section)}</td><td class="module">${esc(r.module)}</td><td><span class="status-badge ${r.pass?'status-passed':'status-failed'}">${r.pass?'已过关':'已学未过关'}</span></td><td>${esc(r.pre)}</td></tr>`).join('')}</tbody></table>`}else{$('content').innerHTML=`<table><thead><tr><th>计划课次</th><th>计划日期</th><th>章节</th><th>章/节/专题</th><th>题模名称</th><th>学习状态</th><th>规划类型</th><th>时长(min)</th></tr></thead><tbody>${rows.map(r=>`<tr class="row-unlearned"><td>${esc(r.lesson)}</td><td>${esc(r.date)}</td><td>${esc(r.chapter)}</td><td>${esc(r.section)}</td><td class="module">${esc(r.module)}</td><td><span class="status-badge status-unlearned">未学</span></td><td>${esc(r.type)}</td><td>${esc(r.dur)}</td></tr>`).join('')}</tbody></table>`}}
+  if(state.tab==='learned'){$('content').innerHTML=`<table><thead><tr><th>学习日期</th><th>章节</th><th>章/节/专题</th><th>题模名称</th><th>规划范围</th><th>是否过关</th><th>前测</th></tr></thead><tbody>${rows.map(r=>`<tr class="${r.pass?'row-passed':'row-failed'}"><td>${esc(r.dates)}</td><td>${esc(r.chapter)}</td><td>${esc(r.section)}</td><td class="module">${esc(r.module)}</td><td>${detailScopeHtml(r)}</td><td><span class="status-badge ${r.pass?'status-passed':'status-failed'}">${r.pass?'已过关':'已学未过关'}</span></td><td>${esc(r.pre)}</td></tr>`).join('')}</tbody></table>`}else{$('content').innerHTML=`<table><thead><tr><th>计划课次</th><th>计划日期</th><th>章节</th><th>章/节/专题</th><th>题模名称</th><th>学习状态</th><th>规划类型</th><th>时长(min)</th></tr></thead><tbody>${rows.map(r=>`<tr class="row-unlearned"><td>${esc(r.lesson)}</td><td>${esc(r.date)}</td><td>${esc(r.chapter)}</td><td>${esc(r.section)}</td><td class="module">${esc(r.module)}</td><td><span class="status-badge status-unlearned">未学</span></td><td>${esc(r.type)}</td><td>${esc(r.dur)}</td></tr>`).join('')}</tbody></table>`}}
 let XLSXlib=null;
 function ensureXLSX(){if(XLSXlib)return Promise.resolve(XLSXlib);if(window.XLSX){XLSXlib=window.XLSX;return Promise.resolve(XLSXlib)}return new Promise((resolve,reject)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';s.onload=()=>{XLSXlib=window.XLSX;resolve(XLSXlib)};s.onerror=()=>reject(new Error('无法加载导出组件'));document.head.appendChild(s)})}
 function normDate(v){const s=String(v??'').trim();let m=s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);if(m)return `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);if(m)return `${m[3].length===2?'20'+m[3]:m[3]}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`;return ''}
