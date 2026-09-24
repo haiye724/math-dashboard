@@ -543,6 +543,10 @@ body.ledger-open{overflow:hidden}
 .ledger-header{display:flex;align-items:center;gap:16px;margin-bottom:24px}
 .ledger-header h1{font-family:"Songti SC","STSong","SimSun",serif;font-size:26px;letter-spacing:2px;color:var(--ink-deep)}
 .ledger-header .btn{margin-left:auto}
+.ledger-tabs{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px}
+.ledger-tabs button{padding:10px 24px;border:1px solid var(--line);border-radius:7px;background:white;color:var(--ink-deep);font:600 14px/1.4 inherit;cursor:pointer}
+.ledger-tabs button[aria-selected="true"]{background:var(--ink-deep);color:white;border-color:var(--ink-deep)}
+.ledger-tabs button:focus-visible{outline:2px solid var(--actual);outline-offset:3px}
 .ledger-summary{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px;margin-bottom:18px}
 .ledger-stat{background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:17px 20px}
 .ledger-stat span{display:block;color:var(--ink-mid);font-size:13px}
@@ -566,7 +570,11 @@ body.ledger-open{overflow:hidden}
 .ledger-panel-head h2{font-family:"Songti SC","STSong","SimSun",serif;font-size:20px;letter-spacing:2px;color:var(--ink-deep)}
 .ledger-count{margin-left:auto;color:var(--ink-faint);font-size:12px}
 .ledger-table-wrap{overflow:auto}
-.ledger-table{border-collapse:separate;border-spacing:0;width:100%;min-width:1120px}
+.ledger-table{border-collapse:separate;border-spacing:0;width:100%;min-width:1000px}
+.ledger-table[data-view="cumulative"]{min-width:1160px}
+.ledger-table [hidden]{display:none!important}
+#ledgerPassHeading{width:23%}#ledgerOverallHeading{width:23%}#ledgerProgressHeading{width:25%}
+.ledger-table[data-view="fall"] #ledgerPassHeading{width:28%}.ledger-table[data-view="fall"] #ledgerProgressHeading{width:32%}
 .ledger-table th,.ledger-table td{padding:12px 13px;border-top:1px solid var(--grid);text-align:left;vertical-align:middle}
 .ledger-table th{background:#EEF3F7;color:var(--ink-mid);font-size:12px;white-space:nowrap}
 .ledger-table th small{display:block;font-size:10px;font-weight:400;color:var(--ink-faint);margin-top:2px}
@@ -582,14 +590,15 @@ body.ledger-open{overflow:hidden}
 .ledger-metric.kind-risk{--metric-color:#D9A21B}
 .ledger-metric.kind-alert{--metric-color:var(--fail)}
 .ledger-metric.kind-idle{--metric-color:#AAB7C1}
+.ledger-metric.kind-plan{--metric-color:var(--actual)}
 .ledger-metric-top{display:flex;align-items:center;gap:10px}
-.ledger-metric strong{width:45px;color:var(--ink-deep);font-size:15px;font-variant-numeric:tabular-nums}
+.ledger-metric strong{min-width:51px;color:var(--metric-color);font-size:15px;font-variant-numeric:tabular-nums}
 .ledger-bar{position:relative;flex:1;height:8px;border-radius:4px;background:#E9ECEE;min-width:96px}
 .ledger-bar-fill{display:block;height:100%;border-radius:4px;background:var(--metric-color)}
 .ledger-plan-tick{position:absolute;top:-4px;width:2px;height:16px;background:var(--ink-deep);transform:translateX(-1px)}
 .ledger-plan-label{position:absolute;top:-20px;transform:translateX(-50%);font-size:10px;color:var(--ink-faint);white-space:nowrap}
 .ledger-fraction{display:block;margin-top:3px;color:var(--ink-faint);font-size:11px;font-variant-numeric:tabular-nums}
-.ledger-reason{min-width:220px;color:var(--ink-mid);line-height:1.6}
+.ledger-progress-note{display:block;color:var(--ink-mid);font-size:11px;line-height:1.6;margin-top:3px}
 .ledger-view-btn{border:1px solid var(--actual);background:#fff;color:var(--actual);border-radius:6px;padding:5px 16px;font:600 12px/1.4 inherit;cursor:pointer;white-space:nowrap}
 .ledger-view-btn:hover{background:#EDF3F8}
 .ledger-view-btn:focus-visible{outline:2px solid var(--actual-2);outline-offset:2px}
@@ -792,6 +801,10 @@ body.ledger-open{overflow:hidden}
       <h1>初中数学 · 学习看板</h1>
       <button class="btn" id="ledgerClose" type="button">返回个人看板</button>
     </div>
+    <div class="ledger-tabs" role="tablist" aria-label="台账视图">
+      <button id="ledgerTabCumulative" type="button" role="tab" aria-selected="true" aria-controls="ledgerPanel">台账一 · 累计学情</button>
+      <button id="ledgerTabFall" type="button" role="tab" aria-selected="false" aria-controls="ledgerPanel" tabindex="-1">台账二 · 秋季学情</button>
+    </div>
     <div class="ledger-summary" aria-label="学生状态汇总">
       <div class="ledger-stat"><span>学生总数</span><strong id="ledgerTotal">0</strong></div>
       <div class="ledger-stat kind-ok"><span>正常</span><strong id="ledgerOk">0</strong></div>
@@ -807,11 +820,11 @@ body.ledger-open{overflow:hidden}
       <label class="ledger-check"><input id="ledgerNeeds" type="checkbox">仅看需处理</label>
       <button class="btn primary ledger-export" id="ledgerExport" type="button">导出台账</button>
     </div>
-    <div class="ledger-panel">
-      <div class="ledger-panel-head"><h2>学生管理台账</h2><span class="ledger-count" id="ledgerVisibleCount"></span></div>
+    <div class="ledger-panel" id="ledgerPanel" role="tabpanel" aria-labelledby="ledgerTabCumulative">
+      <div class="ledger-panel-head"><h2 id="ledgerHeading">学生管理台账</h2><span class="ledger-count" id="ledgerVisibleCount"></span></div>
       <div class="ledger-table-wrap">
-        <table class="ledger-table">
-          <thead><tr><th>学生</th><th>年级</th><th>学情风险</th><th title="暑假和秋季所有正式已学题模，含规划外；去重后取最新过关结论">已学过关率<small>暑假＋秋季累计</small></th><th title="暑假规划与秋季期中前规划的题模并集，重复题模只计一次">学习进度<small>暑假＋秋季期中前</small></th><th>风险依据</th><th>操作</th></tr></thead>
+        <table class="ledger-table" id="ledgerTable" data-view="cumulative">
+          <thead><tr><th>学生</th><th>年级</th><th id="ledgerRiskHeading">学情风险</th><th id="ledgerPassHeading">已学过关率<small id="ledgerPassScope">暑假＋秋季前半段规划内已学</small></th><th id="ledgerOverallHeading" title="当前年级暑假＋秋季前半段规划中，已学且最新结果为过关的题模数 / 规划题模去重总数；不据此新增风险判定">整体规划过关率<small>暑假＋秋季前半段</small></th><th id="ledgerProgressHeading">学习进度<small id="ledgerProgressScope">暑假＋秋季前半段</small></th><th>操作</th></tr></thead>
           <tbody id="ledgerRows"></tbody>
         </table>
       </div>
@@ -1225,9 +1238,9 @@ function renderFallCards(stu, grade){
   di.value=fallStart; di.min='2020-01-01';
   di.title=`${stu} 的秋季第1次课从 ${fallStart} 开始统计`;
   document.getElementById('resetDateF').textContent=PF.lessons[0]?.date?'使用计划日期':'使用暑假日期';
-  const rows=records.filter(r=>r.n===stu && fallSet.has(r.m) && recordDays(r).some(d=>d>=fallStart));
-  const fallStageLearned=new Set(rows.map(r=>r.m));
-  const fallStagePassed=new Set(rows.filter(r=>r.p===1).map(r=>r.m));
+  const fallLearning=fallLearningInfo(stu,grade);
+  const fallStageLearned=fallLearning.learned;
+  const fallStagePassed=fallLearning.passedSet;
   const learnedMods=fallStageLearned;
   const total=learnedMods.size, pass=fallStagePassed.size, fail=total-pass;
   const pct1= total? pass/total : 0;
@@ -3169,7 +3182,7 @@ function refreshChapterDay(){const day=chapterToday();if(day!==chapterLastDay){c
 setInterval(refreshChapterDay,60000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshChapterDay();});
 /* 全体学生台账逻辑开始 */
-// 台账固定累计：本学年暑假及秋季已学；进度仅暑假 + 秋季期中前。
+// 台账固定累计：各指标共用暑假 + 秋季期中前规划；明细保留规划外已学。
 function ledgerTermBounds(stu){
   const dates=[...(plans[stu]?.lessons||[]),...(plansFall[stu]?.lessons||[])].map(l=>l.date).filter(Boolean).sort();
   const year=Number((dates[0]||RAW.generatedAt||'').slice(0,4))||new Date().getFullYear();
@@ -3196,12 +3209,14 @@ function ledgerLatestLearned(stu){
   }
   return learned;
 }
-function ledgerCumulativePass(stu){
-  const learned=ledgerLatestLearned(stu),total=learned.size;
-  const passed=[...learned.values()].filter(x=>x.record?.p===1).length,pct=ledgerPct(passed,total);
-  return {kind:ledgerRateKind(pct,total),passed,total,pct};
+function ledgerCumulativePass(stu,grade=detectGrade(stu)){
+  const {target,scopeUnavailable}=ledgerCumulativeTarget(stu,grade),learned=ledgerLatestLearned(stu);
+  const inPlan=[...target].filter(n=>learned.has(n)),total=inPlan.length;
+  const passed=inPlan.filter(n=>learned.get(n)?.record?.p===1).length,pct=ledgerPct(passed,total);
+  return {scope:'planned-learned',kind:scopeUnavailable?'idle':ledgerRateKind(pct,total),passed,total,pct,unavailable:scopeUnavailable};
 }
-function ledgerCumulativeProgress(stu,grade){
+// 整体规划过关率和累计学习进度共用完全相同的规划集合。
+function ledgerCumulativeTarget(stu,grade){
   const summer=plans[stu],fall=plansFall[stu],t=TREE[grade];
   const summerLessons=summer?.lessons||[],fallLessons=fall?.lessons||[];
   const midLessons=fallLessons.filter(l=>/期中前|前半段/.test(String(l.stage||'')));
@@ -3209,7 +3224,18 @@ function ledgerCumulativeProgress(stu,grade){
   const counted=(P,n)=>t.byName.has(n)&&!PLAN_SKIP_TYPES.has(P?.types?.[n]);
   const summerNames=new Set(Object.keys(summer?.dur||{}).filter(n=>counted(summer,n)));
   const midNames=new Set(midLessons.flatMap(l=>l.names||[]).filter(n=>counted(fall,n)));
-  const target=new Set([...summerNames,...midNames]),learned=ledgerLatestLearned(stu);
+  const target=new Set([...summerNames,...midNames]);
+  const scopeUnavailable=fallLessons.some(l=>!/期中前|前半段|期末前|后半段/.test(String(l.stage||'')));
+  return {summer,fall,summerLessons,fallLessons,midLessons,summerNames,midNames,target,schedule,unknownFall,scopeUnavailable};
+}
+function ledgerOverallPlanPass(stu,grade){
+  const {target,scopeUnavailable}=ledgerCumulativeTarget(stu,grade),learned=ledgerLatestLearned(stu);
+  const passed=[...target].filter(n=>learned.get(n)?.record?.p===1).length,total=target.size;
+  return {scope:'plan',kind:total&&!scopeUnavailable?'plan':'idle',passed,total,pct:ledgerPct(passed,total),unavailable:scopeUnavailable};
+}
+function ledgerCumulativeProgress(stu,grade){
+  const {summer,fall,summerLessons,fallLessons,midLessons,summerNames,midNames,target,schedule,unknownFall}=ledgerCumulativeTarget(stu,grade);
+  const learned=ledgerLatestLearned(stu);
   const bounds=ledgerTermBounds(stu),fallStart=fallLessons[0]?.date||`${bounds.start.slice(0,4)}-09-01`;
   // 暑期维持原口径；秋季按统一教学周，不因缺课回退计划目标。
   const allDays=[...new Set([...learned.values()].flatMap(x=>[...x.days]))];
@@ -3235,7 +3261,7 @@ function ledgerCumulativeProgress(stu,grade){
     dueK:summerK+fallK,summerK,fallK,missingCount:missing.length,unavailable:unknownFall,excludedCount:exempt.length,excludedMinutes,
     week:schedule.week,midCount:schedule.midCount,scheduleReason:schedule.reason};
 }
-const ledgerState={stage:'cumulative',grade:'all',risk:'all',query:'',needs:false,visible:[]};
+const ledgerState={stage:'cumulative',view:'cumulative',grade:'all',risk:'all',query:'',needs:false,visible:[]};
 const ledgerLevel={idle:-1,ok:0,risk:1,alert:2};
 const ledgerText={idle:'暂未判定',ok:'正常',risk:'有风险',alert:'预警'};
 function ledgerEscape(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
@@ -3245,8 +3271,7 @@ function ledgerRateKind(pct,total){return !total?'idle':pct>=.9?'ok':pct>=.8?'ri
 function fallPaceInfo(stu,grade){
   const P=plansFall[stu],t=TREE[grade],start=fallFirstLessonDate(stu);
   const target=fallPlanModelSet(stu,grade);
-  const rows=records.filter(r=>r.n===stu&&target.has(r.m)&&recordDays(r).some(d=>d>=start));
-  const learned=new Set(rows.map(r=>r.m)),schedule=fallWeekSchedule(P);
+  const {learned}=fallLearningInfo(stu,grade),schedule=fallWeekSchedule(P);
   const {dueK}=schedule,due=new Set();
   for(const lesson of schedule.dueLessons)for(const n of lesson.names||[])if(target.has(n))due.add(n);
   // 历史明确过关且最新仍过关的题模免补；不改导入总数或本阶段已学数。
@@ -3271,6 +3296,14 @@ function fallPaceInfo(stu,grade){
   return {kind,num,den,pct,planPct,gap,slowMin,lessonMin,addLessons,dueK,missingCount:missing.length,
     excludedCount:exempt.length,excludedMinutes,week:schedule.week,midCount:schedule.midCount,
     unavailable:schedule.unavailable,scheduleReason:schedule.reason};
+}
+// 秋季台账与个人仪表盘共用同一去重集合，保持现有过关判定不变。
+function fallLearningInfo(stu,grade){
+  const target=fallPlanModelSet(stu,grade),start=fallFirstLessonDate(stu);
+  const rows=records.filter(r=>r.n===stu&&target.has(r.m)&&recordDays(r).some(d=>d>=start));
+  const learned=new Set(rows.map(r=>r.m)),passedSet=new Set(rows.filter(r=>r.p===1).map(r=>r.m));
+  const total=learned.size,passed=passedSet.size,pct=total?passed/total:0;
+  return {learned,passedSet,total,passed,fail:total-passed,pct,kind:!total?'idle':pct>=.9?'ok':pct>=.8?'risk':'alert'};
 }
 function fallWeekStorageKey(){
   const stamp=typeof RAW!=='undefined'?String(RAW.generatedAt||''):'';
@@ -3362,7 +3395,7 @@ function personalFallComparison(p){
   return basis+fallPaceLabel({...p,addLessons:0});
 }
 function ledgerStagePass(stu,grade,stage){
-  return ledgerCumulativePass(stu);
+  return ledgerCumulativePass(stu,grade);
 }
 function ledgerStageProgress(stu,grade,stage){
   return ledgerCumulativeProgress(stu,grade);
@@ -3374,7 +3407,7 @@ function ledgerChapterRisk(stu,grade){
   return {kind:judged[0].status.kind,model:judged[0]};
 }
 function ledgerStudentMetric(stu,stage=ledgerState.stage){
-  const grade=detectGrade(stu),pass=ledgerCumulativePass(stu),progress=ledgerCumulativeProgress(stu,grade),chapter=ledgerChapterRisk(stu,grade);
+  const grade=detectGrade(stu),pass=ledgerCumulativePass(stu,grade),progress=ledgerCumulativeProgress(stu,grade),chapter=ledgerChapterRisk(stu,grade);
   // 没有累计有效学习证据时，不让历史章节状态覆盖为正常。
   const stageEmpty=pass.total===0&&progress.num===0;
   if(stageEmpty){
@@ -3397,15 +3430,34 @@ function ledgerStudentMetric(stu,stage=ledgerState.stage){
   if(!reason)reason=progress.gap<=0&&progress.missingCount?fallPaceLabel(progress):kind==='idle'?'暂无可判定数据':'已判定指标均正常';
   return {student:stu,grade,kind,pass,progress,reason};
 }
-function ledgerMetricHtml(m,progress=false){
-  if(m.unavailable)return '<div class="ledger-metric kind-idle"><strong>—</strong><span class="ledger-fraction">排课待确认</span></div>';
+function ledgerAutumnMetric(stu){
+  const grade=detectGrade(stu),pass=fallLearningInfo(stu,grade),progress=fallPaceInfo(stu,grade);
+  const parts=[pass.kind,progress.kind],max=Math.max(...parts.map(k=>ledgerLevel[k]));
+  const kind=max<0?'idle':parts.find(k=>ledgerLevel[k]===max);
+  return {student:stu,grade,kind,pass,progress};
+}
+function ledgerViewMetric(stu,view=ledgerState.view){
+  if(view==='fall')return ledgerAutumnMetric(stu);
+  const metric=ledgerStudentMetric(stu);
+  return {...metric,overall:ledgerOverallPlanPass(stu,metric.grade)};
+}
+function ledgerFallProgressNote(p){
+  if(!p.den)return '未导入当前年级秋季规划';
+  if(p.unavailable)return p.scheduleReason+'，排课待确认';
+  if(!p.dueK)return personalFallComparison(p);
+  return `应到第${p.dueK}课 · ${fallPaceLabel({...p,addLessons:0})}`;
+}
+function ledgerMetricHtml(m,progress=false,fall=false){
+  if(m.unavailable&&!fall)return `<div class="ledger-metric kind-idle"><strong>—</strong><span class="ledger-fraction">${m.scope==='plan'||m.scope==='planned-learned'?'规划范围待确认':'排课待确认'}</span></div>`;
   const pct=m.den||m.total?m.pct:0,total=progress?m.den:m.total,num=progress?m.num:m.passed;
   const text=total?`${(pct*100).toFixed(1)}%`:'—',width=Math.max(0,Math.min(100,pct*100));
-  const tick=progress&&total?`<i class="ledger-plan-tick" style="left:${Math.max(0,Math.min(100,m.planPct*100))}%"></i><span class="ledger-plan-label" style="left:${Math.max(4,Math.min(96,m.planPct*100))}%">计划${Math.round(m.planPct*100)}%</span>`:'';
-  return `<div class="ledger-metric kind-${m.kind}"><div class="ledger-metric-top"><strong>${text}</strong><div class="ledger-bar"><span class="ledger-bar-fill" style="width:${width}%"></span>${tick}</div></div><span class="ledger-fraction">${num} / ${total}</span></div>`;
+  const tick=progress&&total&&!m.unavailable?`<i class="ledger-plan-tick" style="left:${Math.max(0,Math.min(100,m.planPct*100))}%"></i><span class="ledger-plan-label" style="left:${Math.max(4,Math.min(96,m.planPct*100))}%">计划${Math.round(m.planPct*100)}%</span>`:'';
+  const fraction=m.scope==='plan'?`过关 ${num} / 规划 ${total}`:progress?`已学 ${num} / 规划 ${total}`:`过关 ${num} / 已学 ${total}`;
+  const note=fall&&progress?`<span class="ledger-progress-note" title="${ledgerEscape(fallPaceTitle(m))}">${ledgerEscape(ledgerFallProgressNote(m))}</span>`:'';
+  return `<div class="ledger-metric kind-${m.kind}"><div class="ledger-metric-top"><strong>${text}</strong><div class="ledger-bar"><span class="ledger-bar-fill" style="width:${width}%"></span>${tick}</div></div><span class="ledger-fraction">${fraction}</span>${note}</div>`;
 }
 function ledgerFilteredRows(){
-  const all=studentList().map(n=>ledgerStudentMetric(n));
+  const all=studentList().map(n=>ledgerViewMetric(n));
   const base=all.filter(r=>ledgerState.grade==='all'||r.grade===ledgerState.grade);
   const counts={total:base.length,ok:0,risk:0,alert:0,idle:0};base.forEach(r=>counts[r.kind]++);
   let visible=base.filter(r=>ledgerState.risk==='all'||r.kind===ledgerState.risk);
@@ -3416,6 +3468,19 @@ function ledgerFilteredRows(){
 }
 function renderLedger(){
   if(!document.getElementById('ledgerView'))return;
+  const fall=ledgerState.view==='fall';
+  for(const [id,selected] of [['ledgerTabCumulative',!fall],['ledgerTabFall',fall]]){
+    const tab=document.getElementById(id);if(tab){tab.setAttribute('aria-selected',String(selected));tab.tabIndex=selected?0:-1;}
+  }
+  document.getElementById('ledgerPanel').setAttribute('aria-labelledby',fall?'ledgerTabFall':'ledgerTabCumulative');
+  document.getElementById('ledgerHeading').textContent=fall?'秋季学情台账':'学生管理台账';
+  document.getElementById('ledgerRiskHeading').textContent=fall?'秋季风险':'学情风险';
+  document.getElementById('ledgerPassScope').textContent=fall?'秋季规划内已学':'暑假＋秋季前半段规划内已学';
+  document.getElementById('ledgerOverallHeading').hidden=fall;
+  document.getElementById('ledgerTable').setAttribute('data-view',fall?'fall':'cumulative');
+  document.getElementById('ledgerProgressScope').textContent=fall?'秋季已学 / 秋季规划总数':'暑假＋秋季前半段';
+  document.getElementById('ledgerPassHeading').title=fall?'与个人秋季仪表盘一致：秋季首课起、规划内已学题模的过关比例':'当前年级暑假＋秋季前半段规划内已学题模的过关比例，重复只计一次，取最新过关结论；不含规划外，已学数与学习进度一致';
+  document.getElementById('ledgerProgressHeading').title=fall?'与个人秋季仪表盘一致：秋季已学题模数 / 导入秋季规划题模总数':'暑假规划与秋季前半段规划的题模并集，重复题模只计一次';
   const {counts,visible}=ledgerFilteredRows();ledgerState.visible=visible;
   document.getElementById('ledgerTotal').textContent=counts.total;
   document.getElementById('ledgerOk').textContent=counts.ok;
@@ -3423,28 +3488,46 @@ function renderLedger(){
   document.getElementById('ledgerAlert').textContent=counts.alert;
   document.getElementById('ledgerIdle').textContent=counts.idle;
   document.getElementById('ledgerVisibleCount').textContent=`当前显示 ${visible.length} 名学生`;
-  document.getElementById('ledgerRows').innerHTML=visible.length?visible.map(r=>`<tr><td class="ledger-name">${ledgerEscape(r.student)}</td><td>${r.grade}</td><td><span class="ledger-risk-pill kind-${r.kind}">${ledgerText[r.kind]}</span></td><td>${ledgerMetricHtml(r.pass)}</td><td>${ledgerMetricHtml(r.progress,true)}</td><td class="ledger-reason">${ledgerEscape(r.reason)}</td><td><button class="ledger-view-btn" type="button" data-ledger-student="${ledgerEscape(r.student)}">查看</button></td></tr>`).join(''):'<tr><td class="ledger-empty" colspan="7">当前条件下没有学生</td></tr>';
+  document.getElementById('ledgerRows').innerHTML=visible.length?visible.map(r=>`<tr><td class="ledger-name">${ledgerEscape(r.student)}</td><td>${r.grade}</td><td><span class="ledger-risk-pill kind-${r.kind}">${ledgerText[r.kind]}</span></td><td>${ledgerMetricHtml(r.pass,false,fall)}</td>${fall?'':`<td>${ledgerMetricHtml(r.overall)}</td>`}<td>${ledgerMetricHtml(r.progress,true,fall)}</td><td><button class="ledger-view-btn" type="button" data-ledger-student="${ledgerEscape(r.student)}">查看</button></td></tr>`).join(''):`<tr><td class="ledger-empty" colspan="${fall?6:7}">当前条件下没有学生</td></tr>`;
+}
+function setLedgerView(view){
+  if(!['cumulative','fall'].includes(view))return;
+  ledgerState.view=view;renderLedger();
 }
 function openLedger(){
   document.getElementById('ledgerView').hidden=false;document.body.classList.add('ledger-open');renderLedger();document.getElementById('ledgerClose').focus();
 }
 function closeLedger(){document.getElementById('ledgerView').hidden=true;document.body.classList.remove('ledger-open');document.getElementById('ledgerOpen')?.focus();}
 function exportLedger(){
-  const heads=['学生','年级','学情风险','暑假秋季累计已学过关率','累计已过关','累计已学','暑假及秋季期中前学习进度','规划内累计已学','暑假及秋季期中前规划总数','计划应到','风险依据'];
-  const rows=ledgerState.visible.map(r=>[r.student,r.grade,ledgerText[r.kind],r.pass.total?(r.pass.pct*100).toFixed(1)+'%':'',r.pass.passed,r.pass.total,!r.progress.unavailable&&r.progress.den?(r.progress.pct*100).toFixed(1)+'%':'',r.progress.unavailable?'':r.progress.num,r.progress.unavailable?'':r.progress.den,!r.progress.unavailable&&r.progress.den?(r.progress.planPct*100).toFixed(1)+'%':'',r.reason]);
+  const fall=ledgerState.view==='fall';
+  const heads=['学生','年级',fall?'秋季风险':'学情风险',fall?'秋季已学过关率':'暑假及秋季前半段规划内已学过关率',fall?'秋季已过关':'规划内累计已过关',fall?'秋季已学':'规划内累计已学',fall?'秋季学习进度':'暑假及秋季期中前学习进度',fall?'秋季规划内已学':'规划内累计已学',fall?'秋季规划总数':'暑假及秋季期中前规划总数','计划应到'];
+  if(fall)heads.push('秋季应完成周次','应到课次','进度情况');
+  else heads.splice(6,0,'整体规划过关率','规划内已学且过关','整体规划题模总数');
+  const rows=ledgerState.visible.map(r=>{
+    const show=fall||!r.progress.unavailable;
+    const row=[r.student,r.grade,ledgerText[r.kind],!r.pass.unavailable&&r.pass.total?(r.pass.pct*100).toFixed(1)+'%':'',r.pass.unavailable?'':r.pass.passed,r.pass.unavailable?'':r.pass.total,show&&r.progress.den?(r.progress.pct*100).toFixed(1)+'%':'',show?r.progress.num:'',show?r.progress.den:'',!r.progress.unavailable&&r.progress.den?(r.progress.planPct*100).toFixed(1)+'%':''];
+    if(fall)row.push(r.progress.week,r.progress.unavailable?'':r.progress.dueK,ledgerFallProgressNote(r.progress));
+    else row.splice(6,0,!r.overall.unavailable&&r.overall.total?(r.overall.pct*100).toFixed(1)+'%':'',r.overall.unavailable?'':r.overall.passed,r.overall.unavailable?'':r.overall.total);
+    return row;
+  });
   const cell=v=>`"${String(v??'').replace(/"/g,'""')}"`,csv='\ufeff'+[heads,...rows].map(r=>r.map(cell).join(',')).join('\r\n');
-  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));a.download=`全体学生台账_累计_${chapterToday()}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),0);
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));a.download=`${fall?'台账二_秋季学情':'台账一_累计学情'}_${chapterToday()}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),0);
 }
 function initLedger(){
   const open=document.getElementById('ledgerOpen');if(!open)return;
   initFallWeekControls();
+  for(const [id,view] of [['ledgerTabCumulative','cumulative'],['ledgerTabFall','fall']]){
+    const tab=document.getElementById(id);if(!tab)continue;
+    tab.onclick=()=>setLedgerView(view);
+    tab.onkeydown=e=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();const next=e.key==='Home'?'cumulative':e.key==='End'?'fall':view==='fall'?'cumulative':'fall';setLedgerView(next);document.getElementById(next==='fall'?'ledgerTabFall':'ledgerTabCumulative').focus();};
+  }
   open.onclick=openLedger;document.getElementById('ledgerClose').onclick=closeLedger;
   document.getElementById('ledgerGrade').onchange=e=>{ledgerState.grade=e.target.value;renderLedger();};
   document.getElementById('ledgerRiskFilter').onchange=e=>{ledgerState.risk=e.target.value;renderLedger();};
   document.getElementById('ledgerSearch').oninput=e=>{ledgerState.query=e.target.value;renderLedger();};
   document.getElementById('ledgerNeeds').onchange=e=>{ledgerState.needs=e.target.checked;renderLedger();};
   document.getElementById('ledgerExport').onclick=exportLedger;
-  document.getElementById('ledgerRows').onclick=e=>{const b=e.target.closest('[data-ledger-student]');if(!b)return;state.student=b.dataset.ledgerStudent;state.stage=plansFall[state.student]?'fall':'summer';closeLedger();renderAll();window.scrollTo({top:0,behavior:'smooth'});};
+  document.getElementById('ledgerRows').onclick=e=>{const b=e.target.closest('[data-ledger-student]');if(!b)return;state.student=b.dataset.ledgerStudent;state.stage=ledgerState.view==='fall'||plansFall[state.student]?'fall':'summer';closeLedger();renderAll();window.scrollTo({top:0,behavior:'smooth'});};
   document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!document.getElementById('ledgerView').hidden)closeLedger();});
   openLedger();
 }
