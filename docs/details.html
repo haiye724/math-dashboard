@@ -37,6 +37,7 @@ tbody tr.row-unlearned td{background:#FFF8E6}
     <input class="search" id="search" placeholder="搜索题模、章节或专题…">
     <button class="export" id="export" type="button">导出暑假</button>
     <button class="export" id="exportAll" type="button">导出全量</button>
+    <button class="export" id="exportPendingMap" type="button" title="导出当前学生、所选阶段的全部待学题模（含待复习），不受搜索影响；仅打开表内题模，不关闭表外题模。">导出待学题模（地图）</button>
     <span class="sync" id="sync"></span>
   </div>
   <div class="summary">
@@ -128,9 +129,43 @@ function compute(stage=state.stage){const stu=state.student,grade=gradeOf(stu),t
   learned.forEach(r=>{r.scope=detailPlanScope(P,r.module);r.stage=stage;});
   return{grade,start,end,learned,unlearned,plannedPass,hasPlan:!!P}}
 function filter(rows){const k=state.search.trim().toLowerCase();return k?rows.filter(r=>[r.module,r.chapter,r.section,r.lesson,r.date,r.status,r.scope==='outside'?'规划外':''].some(x=>String(x||'').toLowerCase().includes(k))):rows}
-function render(){const x=compute(),pass=x.plannedPass;const review=x.unlearned.filter(r=>r.review).length;$('pendingLabel').textContent=state.stage==='fall'?'秋季规划内待学':'规划内未学';$('pendingBreakdown').textContent=x.hasPlan&&state.stage==='fall'?`未学 ${x.unlearned.length-review} · 历史已学待复习 ${review}`:'';$('studentName').textContent=state.student;$('learnedCount').textContent=x.learned.length;$('unlearnedCount').textContent=x.hasPlan?x.unlearned.length:'—';$('plannedPassRate').textContent=x.hasPlan&&pass.total?`${(pass.passed/pass.total*100).toFixed(1)}%`:'—';$('plannedPassCount').textContent=x.hasPlan?`过关 ${pass.passed} / ${pass.total} 模`:'未导入规划';$('summer').classList.toggle('on',state.stage==='summer');$('fall').classList.toggle('on',state.stage==='fall');$('tabLearned').classList.toggle('on',state.tab==='learned');$('tabUnlearned').classList.toggle('on',state.tab==='unlearned');$('tabLearned').textContent=`已学 ${x.learned.length}`;$('tabUnlearned').textContent=`${state.stage==='fall'?'待学':'未学'} ${x.hasPlan?x.unlearned.length:'—'}`;$('export').textContent=state.stage==='fall'?'导出秋季':'导出暑假';$('export').disabled=!x.hasPlan;
+function render(){const x=compute(),pass=x.plannedPass;const review=x.unlearned.filter(r=>r.review).length;$('pendingLabel').textContent=state.stage==='fall'?'秋季规划内待学':'规划内未学';$('pendingBreakdown').textContent=x.hasPlan&&state.stage==='fall'?`未学 ${x.unlearned.length-review} · 历史已学待复习 ${review}`:'';$('studentName').textContent=state.student;$('learnedCount').textContent=x.learned.length;$('unlearnedCount').textContent=x.hasPlan?x.unlearned.length:'—';$('plannedPassRate').textContent=x.hasPlan&&pass.total?`${(pass.passed/pass.total*100).toFixed(1)}%`:'—';$('plannedPassCount').textContent=x.hasPlan?`过关 ${pass.passed} / ${pass.total} 模`:'未导入规划';$('summer').classList.toggle('on',state.stage==='summer');$('fall').classList.toggle('on',state.stage==='fall');$('tabLearned').classList.toggle('on',state.tab==='learned');$('tabUnlearned').classList.toggle('on',state.tab==='unlearned');$('tabLearned').textContent=`已学 ${x.learned.length}`;$('tabUnlearned').textContent=`${state.stage==='fall'?'待学':'未学'} ${x.hasPlan?x.unlearned.length:'—'}`;$('export').textContent=state.stage==='fall'?'导出秋季':'导出暑假';$('export').disabled=!x.hasPlan;$('exportPendingMap').disabled=!x.hasPlan||!x.unlearned.length;
   const rows=filter(state.tab==='learned'?x.learned:x.unlearned);if(state.tab==='unlearned'&&!x.hasPlan){$('content').innerHTML='<div class="empty">该学生尚未导入当前阶段规划，无法计算未学题模。</div>';return}if(!rows.length){$('content').innerHTML='<div class="empty">当前条件下没有数据。</div>';return}
   if(state.tab==='learned'){$('content').innerHTML=`<table><thead><tr><th>学习日期</th><th>章节</th><th>章/节/专题</th><th>题模名称</th><th>规划范围</th><th>是否过关</th><th>前测</th></tr></thead><tbody>${rows.map(r=>`<tr class="${r.pass?'row-passed':'row-failed'}"><td>${esc(r.dates)}</td><td>${esc(r.chapter)}</td><td>${esc(r.section)}</td><td class="module">${esc(r.module)}</td><td>${detailScopeHtml(r)}</td><td><span class="status-badge ${r.pass?'status-passed':'status-failed'}">${r.pass?'已过关':'已学未过关'}</span></td><td>${esc(r.pre)}</td></tr>`).join('')}</tbody></table>`}else{$('content').innerHTML=`<table><thead><tr><th>计划课次</th><th>计划日期</th><th>章节</th><th>章/节/专题</th><th>题模名称</th><th>学习状态</th><th>规划类型</th><th>时长(min)</th></tr></thead><tbody>${rows.map(r=>`<tr class="${r.review?'row-failed row-review':'row-unlearned'}"><td>${esc(r.lesson)}</td><td>${esc(r.date)}</td><td>${esc(r.chapter)}</td><td>${esc(r.section)}</td><td class="module">${esc(r.module)}</td><td><span class="status-badge ${r.review?'status-failed':'status-unlearned'}">${esc(r.status||'未学')}</span></td><td>${esc(r.type)}</td><td>${esc(r.dur)}</td></tr>`).join('')}</tbody></table>`}}
+/* 待学题模地图导出开始 */
+function pendingMapExportRows(){
+  // 专用输入表使用整个所选阶段的待学集合，不跟随“已学/待学”页签或搜索关键词缩减。
+  const x=compute(),stu=state.student;
+  if(!x.hasPlan)throw new Error('请先导入当前阶段规划，再导出待学题模。');
+  if(!x.unlearned.length)throw new Error('当前学生在所选阶段没有待学题模，无需导出。');
+  const gradeCode={'初一':'7上','初二':'8上','初三':'9上'}[x.grade];
+  if(!gradeCode)throw new Error('无法确认当前年级，请先核对学生年级。');
+  const phase=state.stage==='fall'?'秋季':'暑假';
+  const rows=x.unlearned.map(r=>{
+    if(!r.chapter||!r.section||!r.module)throw new Error('题模目录不完整，请先核对：'+r.module);
+    const kind=String(r.type||'').trim().replace(/（/g,'(').replace(/）/g,')');
+    if(!['必学','测学','测学(进度)'].includes(kind))throw new Error('该题模的规划类型无法用于地图工具，请先核对：'+r.module+'（'+(kind||'空')+'）');
+    // “学习状态”是地图工具的目标状态别名，说明字段必须另取名，不能导致解析冲突。
+    // 工具v1以“仅重试”标记识别子集输入，禁止据此关闭表外题模；这里复用其安全协议。
+    return [stu,gradeCode,`${x.grade}/人教版/上册`,phase,r.chapter,r.section,r.module,kind,'必学',r.status||'未学',r.lesson,r.date,r.dur,'题模明细工具v1','仅重试'];
+  });
+  return {student:stu,phase,rows,headers:['学生姓名','年级','教材页签','阶段','章节','知识元','题模名称','类型','应设为','待学说明','计划课次','计划日期','计划时长(min)','导出格式','明细范围']};
+}
+function pendingMapCsv(data){
+  // 与工具v1的安全转义还原协议配对，保留以数学符号开头的题模名。
+  const cell=v=>{let s=String(v??'');if(/^[=+@-]/.test(s))s="'"+s;return '"'+s.replace(/"/g,'""')+'"';};
+  return '\ufeff'+[data.headers,...data.rows].map(row=>row.map(cell).join(',')).join('\r\n');
+}
+function exportPendingMap(){
+  try{
+    const data=pendingMapExportRows(),safe=s=>s.replace(/[\\/:*?"<>|]/g,'_');
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(new Blob([pendingMapCsv(data)],{type:'text/csv;charset=utf-8'}));
+    a.download=`${safe(data.student)}_${data.phase}_待学题模明细_地图_${data.rows.length}模_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  }catch(e){alert(e.message||'待学题模导出失败');}
+}
+/* 待学题模地图导出结束 */
 let XLSXlib=null;
 function ensureXLSX(){if(XLSXlib)return Promise.resolve(XLSXlib);if(window.XLSX){XLSXlib=window.XLSX;return Promise.resolve(XLSXlib)}return new Promise((resolve,reject)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';s.onload=()=>{XLSXlib=window.XLSX;resolve(XLSXlib)};s.onerror=()=>reject(new Error('无法加载导出组件'));document.head.appendChild(s)})}
 function normDate(v){const s=String(v??'').trim();let m=s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);if(m)return `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);if(m)return `${m[3].length===2?'20'+m[3]:m[3]}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`;return ''}
@@ -175,7 +210,7 @@ function exportAll(){
 function initData(data){if(DATA)return;DATA=data;makeTrees();const students=[...new Set((DATA.records||[]).map(r=>r.n))].filter(studentIsActive).sort((a,b)=>a.localeCompare(b,'zh'));$('student').innerHTML=students.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');state.student=students.includes(param().get('student'))?param().get('student'):students[0]||'';state.stage=param().get('stage')==='fall'?'fall':'summer';$('student').value=state.student;$('sync').textContent=DATA.generatedAt?`数据更新：${DATA.generatedAt}`:'';render()}
 async function load(){try{if(window.parent!==window){window.parent.postMessage({type:'math-dashboard-details-ready'},'*');return;}if(location.protocol!=='file:'){const d=await fetch('data.json?'+Date.now(),{cache:'no-store'}).then(r=>r.json());initData(d);return}if(window.parent!==window){window.parent.postMessage({type:'math-dashboard-details-ready'},'*');return}if(window.opener&&typeof window.opener.getDashboardData==='function')initData(window.opener.getDashboardData());else throw new Error('本地明细页需要从学习看板进入')}catch(e){$('content').innerHTML='<div class="empty">数据读取失败。请从原学习看板点击“查看学习明细”进入。</div>'}}
 window.addEventListener('message',e=>{if(e.data?.type==='math-dashboard-data'&&e.data.data)initData(e.data.data)});
-$('student').onchange=e=>{state.student=e.target.value;render()};$('summer').onclick=()=>{state.stage='summer';render()};$('fall').onclick=()=>{state.stage='fall';render()};$('tabLearned').onclick=()=>{state.tab='learned';render()};$('tabUnlearned').onclick=()=>{state.tab='unlearned';render()};$('search').oninput=e=>{state.search=e.target.value;render()};$('export').onclick=exportCurrent;$('exportAll').onclick=exportAll;$('back').onclick=e=>{if(window.parent!==window){e.preventDefault();window.parent.postMessage({type:'math-dashboard-details-close'},'*')}};load();
+$('student').onchange=e=>{state.student=e.target.value;render()};$('summer').onclick=()=>{state.stage='summer';render()};$('fall').onclick=()=>{state.stage='fall';render()};$('tabLearned').onclick=()=>{state.tab='learned';render()};$('tabUnlearned').onclick=()=>{state.tab='unlearned';render()};$('search').oninput=e=>{state.search=e.target.value;render()};$('export').onclick=exportCurrent;$('exportAll').onclick=exportAll;$('exportPendingMap').onclick=exportPendingMap;$('back').onclick=e=>{if(window.parent!==window){e.preventDefault();window.parent.postMessage({type:'math-dashboard-details-close'},'*')}};load();
 </script>
 </body>
 </html>
