@@ -56,7 +56,8 @@ tbody tr.row-unlearned td{background:#FFF8E6}
 /* 学生停用名单开始 */
 // 仅隐藏展示及台账统计，不删除学情或规划。恢复时移除姓名并重新构建。
 const INACTIVE_STUDENTS = new Set([
-  '徐义博', '田羽棠', '施懿桐', '李宇鑫', '徐知行', '杨鉴泽'
+  '徐义博', '田羽棠', '施懿桐', '李宇鑫', '徐知行', '杨鉴泽',
+  '黄诗迪', '李涵芮', '歆歆', '钟子淇'
 ]);
 function studentIsActive(name){
   const normalized=String(name||'').trim();
