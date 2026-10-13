@@ -569,16 +569,29 @@ body.ledger-open{overflow:hidden}
 .ledger-panel-head{display:flex;align-items:center;gap:10px;padding:16px 18px 12px}
 .ledger-panel-head h2{font-family:"Songti SC","STSong","SimSun",serif;font-size:20px;letter-spacing:2px;color:var(--ink-deep)}
 .ledger-count{margin-left:auto;color:var(--ink-faint);font-size:12px}
+.ledger-sort-note{margin:0;padding:0 18px 14px;color:var(--actual);font-size:12px}
+.ledger-sort-badge{display:inline-block;vertical-align:middle;padding:2px 7px;margin-left:4px;border-radius:12px;background:#245A91;color:white;font-size:10px;font-weight:500;letter-spacing:0}
+.ledger-metric-guide{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px;padding:15px 18px;border-top:1px solid var(--grid);color:var(--ink-mid);font-size:11px;line-height:1.6}
+.ledger-metric-guide b{display:block;color:var(--ink-deep);font-size:12px}
+.ledger-metric-guide[hidden],.ledger-sort-note[hidden]{display:none}
 .ledger-table-wrap{overflow:auto}
 .ledger-table{border-collapse:separate;border-spacing:0;width:100%;min-width:1000px}
 .ledger-table[data-view="cumulative"]{min-width:1160px}
 .ledger-table [hidden]{display:none!important}
-#ledgerPassHeading{width:23%}#ledgerOverallHeading{width:23%}#ledgerProgressHeading{width:25%}
+#ledgerPassHeading{width:22%}#ledgerOverallHeading{width:25%}#ledgerProgressHeading{width:24%}
 .ledger-table[data-view="fall"] #ledgerPassHeading{width:28%}.ledger-table[data-view="fall"] #ledgerProgressHeading{width:32%}
 .ledger-table th,.ledger-table td{padding:12px 13px;border-top:1px solid var(--grid);text-align:left;vertical-align:middle}
 .ledger-table th{background:#EEF3F7;color:var(--ink-mid);font-size:12px;white-space:nowrap}
 .ledger-table th small{display:block;font-size:10px;font-weight:400;color:var(--ink-faint);margin-top:2px}
 .ledger-table td{font-size:13px}
+.ledger-table .ledger-overall-cell{background:#F0F7FF;border-left:1px solid #D5E5F5;border-right:1px solid #D5E5F5}
+.ledger-table th.ledger-overall-cell{background:#E4F0FD;color:#173F70;font-size:13px}
+.ledger-overall-cell .ledger-metric{min-width:205px;--metric-color:#245A91}
+.ledger-overall-cell .ledger-metric.kind-idle{--metric-color:#718496}
+.ledger-overall-cell .ledger-metric strong{font-size:23px;min-width:77px;letter-spacing:-.4px}
+.ledger-overall-cell .ledger-bar{height:10px;border-radius:5px;background:#DCE8F4}
+.ledger-overall-cell .ledger-bar-fill{border-radius:5px}
+.ledger-overall-cell .ledger-fraction{margin-top:5px}
 .ledger-name{font-weight:600;color:var(--ink-deep);white-space:nowrap}
 .ledger-risk-pill{display:inline-block;min-width:66px;text-align:center;border:1px solid;border-radius:5px;padding:3px 8px;font-size:12px;font-weight:600;white-space:nowrap}
 .ledger-risk-pill.kind-ok{color:var(--pass);background:var(--pass-bg);border-color:var(--pass)}
@@ -604,7 +617,7 @@ body.ledger-open{overflow:hidden}
 .ledger-view-btn:focus-visible{outline:2px solid var(--actual-2);outline-offset:2px}
 .ledger-empty{text-align:center!important;color:var(--ink-faint);padding:48px 20px!important}
 @media(max-width:900px){.ledger-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.ledger-stat:first-child{grid-column:1/-1}.ledger-export{margin-left:0}}
-@media(max-width:640px){.ledger-wrap{padding:16px 10px 36px}.ledger-header h1{font-size:21px}.ledger-summary{gap:8px}.ledger-stat{padding:12px 14px}.ledger-stat strong{font-size:23px}.ledger-controls{gap:9px}.ledger-field{flex:1}.ledger-field select{width:100%}.ledger-search{max-width:none;width:100%;flex-basis:100%}}
+@media(max-width:640px){.ledger-wrap{padding:16px 10px 36px}.ledger-header h1{font-size:21px}.ledger-summary{gap:8px}.ledger-stat{padding:12px 14px}.ledger-stat strong{font-size:23px}.ledger-controls{gap:9px}.ledger-field{flex:1}.ledger-field select{width:100%}.ledger-search{max-width:none;width:100%;flex-basis:100%}.ledger-metric-guide{grid-template-columns:1fr;gap:8px}.ledger-panel-head{flex-wrap:wrap}}
 /* 全体学生台账样式结束 */
 .pace-comparison{font-size:12px;color:var(--ink-mid);line-height:1.6;margin-top:5px;min-height:19px}
 /* 秋季计划刻度留白 */
@@ -822,12 +835,14 @@ body.ledger-open{overflow:hidden}
     </div>
     <div class="ledger-panel" id="ledgerPanel" role="tabpanel" aria-labelledby="ledgerTabCumulative">
       <div class="ledger-panel-head"><h2 id="ledgerHeading">学生管理台账</h2><span class="ledger-count" id="ledgerVisibleCount"></span></div>
+      <p class="ledger-sort-note" id="ledgerSortNote">整体规划过关率：从高到低 · 无数据学生置底</p>
       <div class="ledger-table-wrap">
         <table class="ledger-table" id="ledgerTable" data-view="cumulative">
-          <thead><tr><th>学生</th><th>年级</th><th id="ledgerRiskHeading">学情风险</th><th id="ledgerPassHeading">已学过关率<small id="ledgerPassScope">暑假＋秋季前半段规划内已学</small></th><th id="ledgerOverallHeading" title="当前年级暑假＋秋季前半段规划中，已学且最新结果为过关的题模数 / 规划题模去重总数；不据此新增风险判定">整体规划过关率<small>暑假＋秋季前半段</small></th><th id="ledgerProgressHeading">学习进度<small id="ledgerProgressScope">暑假＋秋季前半段</small></th><th>操作</th></tr></thead>
+          <thead><tr><th scope="col">学生</th><th scope="col">年级</th><th scope="col" id="ledgerOverallHeading" class="ledger-overall-cell" aria-sort="descending" title="当前年级暑假＋秋季前半段规划中，已学且最新结果为过关的题模数 / 规划题模去重总数；不据此新增风险判定；按实际比例降序，同值按年级、姓名排序">整体规划过关率 ↓ <span class="ledger-sort-badge">降序</span><small>过关 / 规划 · 暑假＋秋季前半段</small></th><th scope="col" id="ledgerRiskHeading">学情风险</th><th scope="col" id="ledgerPassHeading">已学过关率<small id="ledgerPassScope">过关 / 已学 · 暑假＋秋季前半段规划内</small></th><th scope="col" id="ledgerProgressHeading">学习进度<small id="ledgerProgressScope">已学 / 规划 · 暑假＋秋季前半段</small></th><th scope="col">操作</th></tr></thead>
           <tbody id="ledgerRows"></tbody>
         </table>
       </div>
+      <div class="ledger-metric-guide" id="ledgerMetricGuide" aria-label="三个指标的区别"><span><b>整体规划过关率</b>整体规划的过关完成情况</span><span><b>已学过关率</b>已学内容的掌握情况</span><span><b>学习进度</b>规划内容的学习完成情况</span></div>
     </div>
   </div>
 </section>
@@ -3464,7 +3479,15 @@ function ledgerFilteredRows(){
   let visible=base.filter(r=>ledgerState.risk==='all'||r.kind===ledgerState.risk);
   if(ledgerState.needs)visible=visible.filter(r=>r.kind==='risk'||r.kind==='alert');
   const q=ledgerState.query.trim();if(q)visible=visible.filter(r=>r.student.includes(q));
-  const order={alert:0,risk:1,idle:2,ok:3};visible.sort((a,b)=>order[a.kind]-order[b.kind]||a.grade.localeCompare(b.grade,'zh')||a.student.localeCompare(b.student,'zh'));
+  const order={alert:0,risk:1,idle:2,ok:3};
+  const validOverall=r=>!!r.overall&&!r.overall.unavailable&&r.overall.total>0&&Number.isFinite(r.overall.pct);
+  visible.sort((a,b)=>{
+    const tie=()=>a.grade.localeCompare(b.grade,'zh')||a.student.localeCompare(b.student,'zh');
+    if(ledgerState.view==='fall')return order[a.kind]-order[b.kind]||tie();
+    const av=validOverall(a),bv=validOverall(b);
+    // 有规划但尚未过关的 0% 是有效值；缺规划或范围待确认才置底。
+    return Number(bv)-Number(av)||(av&&bv?b.overall.pct-a.overall.pct:0)||tie();
+  });
   return {counts,visible};
 }
 function renderLedger(){
@@ -3476,10 +3499,12 @@ function renderLedger(){
   document.getElementById('ledgerPanel').setAttribute('aria-labelledby',fall?'ledgerTabFall':'ledgerTabCumulative');
   document.getElementById('ledgerHeading').textContent=fall?'秋季学情台账':'学生管理台账';
   document.getElementById('ledgerRiskHeading').textContent=fall?'秋季风险':'学情风险';
-  document.getElementById('ledgerPassScope').textContent=fall?'秋季规划内已学':'暑假＋秋季前半段规划内已学';
+  document.getElementById('ledgerPassScope').textContent=fall?'秋季规划内已学':'过关 / 已学 · 暑假＋秋季前半段规划内';
   document.getElementById('ledgerOverallHeading').hidden=fall;
+  document.getElementById('ledgerSortNote').hidden=fall;
+  document.getElementById('ledgerMetricGuide').hidden=fall;
   document.getElementById('ledgerTable').setAttribute('data-view',fall?'fall':'cumulative');
-  document.getElementById('ledgerProgressScope').textContent=fall?'秋季已学 / 秋季规划总数':'暑假＋秋季前半段';
+  document.getElementById('ledgerProgressScope').textContent=fall?'秋季已学 / 秋季规划总数':'已学 / 规划 · 暑假＋秋季前半段';
   document.getElementById('ledgerPassHeading').title=fall?'与个人秋季仪表盘一致：秋季首课起、规划内已学题模的过关比例':'当前年级暑假＋秋季前半段规划内已学题模的过关比例，重复只计一次，取最新过关结论；不含规划外，已学数与学习进度一致';
   document.getElementById('ledgerProgressHeading').title=fall?'与个人秋季仪表盘一致：秋季已学题模数 / 导入秋季规划题模总数':'暑假规划与秋季前半段规划的题模并集，重复题模只计一次';
   const {counts,visible}=ledgerFilteredRows();ledgerState.visible=visible;
@@ -3489,7 +3514,7 @@ function renderLedger(){
   document.getElementById('ledgerAlert').textContent=counts.alert;
   document.getElementById('ledgerIdle').textContent=counts.idle;
   document.getElementById('ledgerVisibleCount').textContent=`当前显示 ${visible.length} 名学生`;
-  document.getElementById('ledgerRows').innerHTML=visible.length?visible.map(r=>`<tr><td class="ledger-name">${ledgerEscape(r.student)}</td><td>${r.grade}</td><td><span class="ledger-risk-pill kind-${r.kind}">${ledgerText[r.kind]}</span></td><td>${ledgerMetricHtml(r.pass,false,fall)}</td>${fall?'':`<td>${ledgerMetricHtml(r.overall)}</td>`}<td>${ledgerMetricHtml(r.progress,true,fall)}</td><td><button class="ledger-view-btn" type="button" data-ledger-student="${ledgerEscape(r.student)}">查看</button></td></tr>`).join(''):`<tr><td class="ledger-empty" colspan="${fall?6:7}">当前条件下没有学生</td></tr>`;
+  document.getElementById('ledgerRows').innerHTML=visible.length?visible.map(r=>`<tr><td class="ledger-name">${ledgerEscape(r.student)}</td><td>${r.grade}</td>${fall?'':`<td class="ledger-overall-cell">${ledgerMetricHtml(r.overall)}</td>`}<td><span class="ledger-risk-pill kind-${r.kind}">${ledgerText[r.kind]}</span></td><td>${ledgerMetricHtml(r.pass,false,fall)}</td><td>${ledgerMetricHtml(r.progress,true,fall)}</td><td><button class="ledger-view-btn" type="button" data-ledger-student="${ledgerEscape(r.student)}">查看</button></td></tr>`).join(''):`<tr><td class="ledger-empty" colspan="${fall?6:7}">当前条件下没有学生</td></tr>`;
 }
 function setLedgerView(view){
   if(!['cumulative','fall'].includes(view))return;
@@ -3503,12 +3528,12 @@ function exportLedger(){
   const fall=ledgerState.view==='fall';
   const heads=['学生','年级',fall?'秋季风险':'学情风险',fall?'秋季已学过关率':'暑假及秋季前半段规划内已学过关率',fall?'秋季已过关':'规划内累计已过关',fall?'秋季已学':'规划内累计已学',fall?'秋季学习进度':'暑假及秋季期中前学习进度',fall?'秋季规划内已学':'规划内累计已学',fall?'秋季规划总数':'暑假及秋季期中前规划总数','计划应到'];
   if(fall)heads.push('秋季应完成周次','应到课次','进度情况');
-  else heads.splice(6,0,'整体规划过关率','规划内已学且过关','整体规划题模总数');
+  else heads.splice(2,0,'整体规划过关率','规划内已学且过关','整体规划题模总数');
   const rows=ledgerState.visible.map(r=>{
     const show=fall||!r.progress.unavailable;
     const row=[r.student,r.grade,ledgerText[r.kind],!r.pass.unavailable&&r.pass.total?(r.pass.pct*100).toFixed(1)+'%':'',r.pass.unavailable?'':r.pass.passed,r.pass.unavailable?'':r.pass.total,show&&r.progress.den?(r.progress.pct*100).toFixed(1)+'%':'',show?r.progress.num:'',show?r.progress.den:'',!r.progress.unavailable&&r.progress.den?(r.progress.planPct*100).toFixed(1)+'%':''];
     if(fall)row.push(r.progress.week,r.progress.unavailable?'':r.progress.dueK,ledgerFallProgressNote(r.progress));
-    else row.splice(6,0,!r.overall.unavailable&&r.overall.total?(r.overall.pct*100).toFixed(1)+'%':'',r.overall.unavailable?'':r.overall.passed,r.overall.unavailable?'':r.overall.total);
+    else row.splice(2,0,!r.overall.unavailable&&r.overall.total?(r.overall.pct*100).toFixed(1)+'%':'',r.overall.unavailable?'':r.overall.passed,r.overall.unavailable?'':r.overall.total);
     return row;
   });
   const cell=v=>`"${String(v??'').replace(/"/g,'""')}"`,csv='\ufeff'+[heads,...rows].map(r=>r.map(cell).join(',')).join('\r\n');
