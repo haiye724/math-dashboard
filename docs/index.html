@@ -838,11 +838,11 @@ body.ledger-open{overflow:hidden}
       <p class="ledger-sort-note" id="ledgerSortNote">整体规划过关率：从高到低 · 无数据学生置底</p>
       <div class="ledger-table-wrap">
         <table class="ledger-table" id="ledgerTable" data-view="cumulative">
-          <thead><tr><th scope="col">学生</th><th scope="col">年级</th><th scope="col" id="ledgerOverallHeading" class="ledger-overall-cell" aria-sort="descending" title="当前年级暑假＋秋季前半段规划中，已学且最新结果为过关的题模数 / 规划题模去重总数；不据此新增风险判定；按实际比例降序，同值按年级、姓名排序">整体规划过关率 ↓ <span class="ledger-sort-badge">降序</span><small>过关 / 规划 · 暑假＋秋季前半段</small></th><th scope="col" id="ledgerRiskHeading">学情风险</th><th scope="col" id="ledgerPassHeading">已学过关率<small id="ledgerPassScope">过关 / 已学 · 暑假＋秋季前半段规划内</small></th><th scope="col" id="ledgerProgressHeading">学习进度<small id="ledgerProgressScope">已学 / 规划 · 暑假＋秋季前半段</small></th><th scope="col">操作</th></tr></thead>
+          <thead><tr><th scope="col">学生</th><th scope="col">年级</th><th scope="col" id="ledgerOverallHeading" class="ledger-overall-cell" aria-sort="descending" title="当前年级暑假＋秋季前半段规划中，最新判定已过关的题模数 / 规划题模去重总数；不限学习时期，包含历史、试卷、章测及前序推定的有效过关记录，不将其视为本期已学；不据此新增风险判定；按实际比例降序，同值按年级、姓名排序">整体规划过关率 ↓ <span class="ledger-sort-badge">降序</span><small>过关 / 规划 · 过关不限学习时期</small></th><th scope="col" id="ledgerRiskHeading">学情风险</th><th scope="col" id="ledgerPassHeading">已学过关率<small id="ledgerPassScope">过关 / 已学 · 暑假＋秋季前半段规划内</small></th><th scope="col" id="ledgerProgressHeading">学习进度<small id="ledgerProgressScope">已学 / 规划 · 暑假＋秋季前半段</small></th><th scope="col">操作</th></tr></thead>
           <tbody id="ledgerRows"></tbody>
         </table>
       </div>
-      <div class="ledger-metric-guide" id="ledgerMetricGuide" aria-label="三个指标的区别"><span><b>整体规划过关率</b>整体规划的过关完成情况</span><span><b>已学过关率</b>已学内容的掌握情况</span><span><b>学习进度</b>规划内容的学习完成情况</span></div>
+      <div class="ledger-metric-guide" id="ledgerMetricGuide" aria-label="三个指标的区别"><span><b>整体规划过关率</b>规划内最新已过关，不限学习时期</span><span><b>已学过关率</b>本期已学内容的掌握情况</span><span><b>学习进度</b>本期规划内容的学习完成情况</span></div>
     </div>
   </div>
 </section>
@@ -3244,9 +3244,23 @@ function ledgerCumulativeTarget(stu,grade){
   const scopeUnavailable=fallLessons.some(l=>!/期中前|前半段|期末前|后半段/.test(String(l.stage||'')));
   return {summer,fall,summerLessons,fallLessons,midLessons,summerNames,midNames,target,schedule,unknownFall,scopeUnavailable};
 }
+// 整体规划看最新过关判定，不要求本期正式学习；不改变本期已学/进度集合。
+// p 是导入数据的当前结论。重复题模按判定日期取最新，同日冲突不取“曾经过关”。
+// 无学习日期但有明确过关结论的独立记录（例如前序推定）也可计入。
+function ledgerLatestOverallResults(stu){
+  const latest=new Map();
+  for(const r of records){
+    if(r.n!==stu)continue;
+    const date=[r.dt,...recordDays(r),r.src?.['章测题模记录日期']]
+      .filter(d=>typeof d==='string'&&/^\d{4}-\d{2}-\d{2}/.test(d)).sort().at(-1)||'';
+    const prev=latest.get(r.m);
+    if(!prev||date>prev.date||(date===prev.date&&r.p!==1))latest.set(r.m,{record:r,date});
+  }
+  return latest;
+}
 function ledgerOverallPlanPass(stu,grade){
-  const {target,scopeUnavailable}=ledgerCumulativeTarget(stu,grade),learned=ledgerLatestLearned(stu);
-  const passed=[...target].filter(n=>learned.get(n)?.record?.p===1).length,total=target.size;
+  const {target,scopeUnavailable}=ledgerCumulativeTarget(stu,grade),latest=ledgerLatestOverallResults(stu);
+  const passed=[...target].filter(n=>latest.get(n)?.record?.p===1).length,total=target.size;
   return {scope:'plan',kind:total&&!scopeUnavailable?'plan':'idle',passed,total,pct:ledgerPct(passed,total),unavailable:scopeUnavailable};
 }
 function ledgerCumulativeProgress(stu,grade){
@@ -3528,7 +3542,7 @@ function exportLedger(){
   const fall=ledgerState.view==='fall';
   const heads=['学生','年级',fall?'秋季风险':'学情风险',fall?'秋季已学过关率':'暑假及秋季前半段规划内已学过关率',fall?'秋季已过关':'规划内累计已过关',fall?'秋季已学':'规划内累计已学',fall?'秋季学习进度':'暑假及秋季期中前学习进度',fall?'秋季规划内已学':'规划内累计已学',fall?'秋季规划总数':'暑假及秋季期中前规划总数','计划应到'];
   if(fall)heads.push('秋季应完成周次','应到课次','进度情况');
-  else heads.splice(2,0,'整体规划过关率','规划内已学且过关','整体规划题模总数');
+  else heads.splice(2,0,'整体规划过关率','规划内最新判定已过关（不限学习时期）','整体规划题模总数');
   const rows=ledgerState.visible.map(r=>{
     const show=fall||!r.progress.unavailable;
     const row=[r.student,r.grade,ledgerText[r.kind],!r.pass.unavailable&&r.pass.total?(r.pass.pct*100).toFixed(1)+'%':'',r.pass.unavailable?'':r.pass.passed,r.pass.unavailable?'':r.pass.total,show&&r.progress.den?(r.progress.pct*100).toFixed(1)+'%':'',show?r.progress.num:'',show?r.progress.den:'',!r.progress.unavailable&&r.progress.den?(r.progress.planPct*100).toFixed(1)+'%':''];
