@@ -57,7 +57,7 @@ tbody tr.row-unlearned td{background:#FFF8E6}
 // 仅隐藏展示及台账统计，不删除学情或规划。恢复时移除姓名并重新构建。
 const INACTIVE_STUDENTS = new Set([
   '徐义博', '田羽棠', '施懿桐', '李宇鑫', '徐知行', '杨鉴泽',
-  '黄诗迪', '李涵芮', '歆歆', '钟子淇'
+  '黄诗迪', '李涵芮', '歆歆', '钟子淇', '李昕芮' // 错误姓名；不影响正确姓名李欣芮
 ]);
 function studentIsActive(name){
   const normalized=String(name||'').trim();
